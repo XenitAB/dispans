@@ -1,4 +1,4 @@
-package authorizationserver
+package server
 
 import (
 	"encoding/json"
@@ -18,15 +18,15 @@ import (
 	"github.com/xenitab/pkg/service"
 )
 
-func TestAuthorizationServerOptionsValidate(t *testing.T) {
+func TestOptionsValidate(t *testing.T) {
 	cases := []struct {
 		testDescription       string
-		opts                  AuthorizationServerOptions
+		opts                  Options
 		expectedErrorContains string
 	}{
 		{
 			testDescription: "All values valid",
-			opts: AuthorizationServerOptions{
+			opts: Options{
 				Address:      "0.0.0.0",
 				Port:         8080,
 				Issuer:       "http://localhost:8080",
@@ -38,7 +38,7 @@ func TestAuthorizationServerOptionsValidate(t *testing.T) {
 		},
 		{
 			testDescription:       "empty struct",
-			opts:                  AuthorizationServerOptions{},
+			opts:                  Options{},
 			expectedErrorContains: "Address is empty",
 		},
 	}
@@ -56,8 +56,8 @@ func TestAuthorizationServerOptionsValidate(t *testing.T) {
 	}
 }
 
-func TestNewAuthorizationServer(t *testing.T) {
-	opts := AuthorizationServerOptions{
+func TestNew(t *testing.T) {
+	opts := Options{
 		Address:      "0.0.0.0",
 		Port:         8080,
 		Issuer:       "https://localhost:8080",
@@ -66,7 +66,7 @@ func TestNewAuthorizationServer(t *testing.T) {
 		RedirectURI:  "http://foo.bar/baz",
 	}
 
-	as, err := NewAuthorizationServer(opts)
+	as, err := New(opts)
 	require.NoError(t, err)
 
 	errGroup, ctx, cancel := service.NewErrGroupAndContext()
@@ -86,10 +86,10 @@ func TestNewAuthorizationServer(t *testing.T) {
 }
 
 func TestAuthorizationServerE2E(t *testing.T) {
-	priv, pub, err := NewJWK()
+	priv, pub, err := newKeys()
 	require.NoError(t, err)
 
-	srv := &authorizationServer{
+	srv := &serverHandler{
 		privateKey: priv,
 		publicKey:  pub,
 	}
@@ -98,7 +98,7 @@ func TestAuthorizationServerE2E(t *testing.T) {
 	clientSecret := "bar"
 	redirectURI := "http://foo.bar/baz"
 
-	opts := AuthorizationServerOptions{
+	opts := Options{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		RedirectURI:  redirectURI,

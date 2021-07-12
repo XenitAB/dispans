@@ -1,4 +1,4 @@
-package authorizationserver
+package server
 
 type User struct {
 	UserID        string `json:"sub"`

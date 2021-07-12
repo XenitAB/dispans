@@ -1,4 +1,4 @@
-package authorizationserver
+package server
 
 import (
 	"testing"

@@ -1,11 +1,11 @@
-package authorizationserver
+package server
 
 import (
 	"fmt"
 	"net/http"
 	"os"
 
-	"github.com/go-oauth2/oauth2/v4/errors"
+	aserrors "github.com/go-oauth2/oauth2/v4/errors"
 	"github.com/go-session/session"
 )
 
@@ -38,15 +38,15 @@ func (h *asHandlers) passwordAuthorization(username, password string) (string, e
 		return h.username, nil
 	}
 
-	return "", errors.ErrAccessDenied
+	return "", aserrors.ErrAccessDenied
 }
 
-func (h *asHandlers) internalError(err error) *errors.Response {
+func (h *asHandlers) internalError(err error) *aserrors.Response {
 	fmt.Fprintf(os.Stderr, "Internal Error: %v\n", err)
 	return nil
 }
 
-func (h *asHandlers) responseError(re *errors.Response) {
+func (h *asHandlers) responseError(re *aserrors.Response) {
 	fmt.Fprintf(os.Stderr, "Response Error: %v\n", re.Error)
 }
 

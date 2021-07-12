@@ -6,7 +6,7 @@ import (
 	"os/signal"
 
 	"github.com/cristalhq/aconfig"
-	"github.com/xenitab/dispans/authorizationserver"
+	"github.com/xenitab/dispans/server"
 	"github.com/xenitab/pkg/service"
 )
 
@@ -31,7 +31,7 @@ func run(cfg config) error {
 	stopChan := service.NewStopChannel()
 	defer signal.Stop(stopChan)
 
-	opts := authorizationserver.AuthorizationServerOptions{
+	opts := server.Options{
 		Issuer:       cfg.Issuer,
 		Address:      cfg.Address,
 		Port:         cfg.Port,
@@ -40,12 +40,12 @@ func run(cfg config) error {
 		RedirectURI:  cfg.RedirectURI,
 	}
 
-	as, err := authorizationserver.NewAuthorizationServer(opts)
+	srv, err := server.New(opts)
 	if err != nil {
 		return err
 	}
 
-	service.Start(ctx, errGroup, as)
+	service.Start(ctx, errGroup, srv)
 
 	stoppedBy := service.WaitForStop(stopChan, ctx)
 	fmt.Printf("Application stopping. Stopped by: %s\n", stoppedBy)
@@ -55,7 +55,7 @@ func run(cfg config) error {
 	timeoutCtx, timeoutCancel := service.NewShutdownTimeoutContext()
 	defer timeoutCancel()
 
-	service.Stop(timeoutCtx, errGroup, as)
+	service.Stop(timeoutCtx, errGroup, srv)
 
 	return service.WaitForErrGroup(errGroup)
 }
