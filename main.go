@@ -83,7 +83,8 @@ func newConfig() (config, error) {
 		FileDecoders: map[string]aconfig.FileDecoder{},
 	})
 
-	if err := loader.Load(); err != nil {
+	err := loader.Load()
+	if err != nil {
 		return config{}, err
 	}
 
