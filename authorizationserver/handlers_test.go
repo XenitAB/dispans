@@ -355,7 +355,7 @@ func testNewHandlers(t *testing.T) *handlers {
 		RedirectURI:  testRedirectURI,
 	}
 
-	priv, pub, err := getRandomJWK()
+	priv, pub, err := NewJWK()
 	require.NoError(t, err)
 
 	srv := &authorizationServer{

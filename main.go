@@ -40,12 +40,12 @@ func run(cfg config) error {
 		RedirectURI:  cfg.RedirectURI,
 	}
 
-	authorizationServer, err := authorizationserver.NewAuthorizationServer(opts)
+	as, err := authorizationserver.NewAuthorizationServer(opts)
 	if err != nil {
 		return err
 	}
 
-	service.Start(ctx, errGroup, authorizationServer)
+	service.Start(ctx, errGroup, as)
 
 	stoppedBy := service.WaitForStop(stopChan, ctx)
 	fmt.Printf("Application stopping. Stopped by: %s\n", stoppedBy)
@@ -55,7 +55,7 @@ func run(cfg config) error {
 	timeoutCtx, timeoutCancel := service.NewShutdownTimeoutContext()
 	defer timeoutCancel()
 
-	service.Stop(timeoutCtx, errGroup, authorizationServer)
+	service.Stop(timeoutCtx, errGroup, as)
 
 	return service.WaitForErrGroup(errGroup)
 }

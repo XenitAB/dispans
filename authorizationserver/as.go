@@ -68,7 +68,7 @@ func NewAuthorizationServer(opts AuthorizationServerOptions) (*authorizationServ
 		return nil, err
 	}
 
-	priv, pub, err := getRandomJWK()
+	priv, pub, err := NewJWK()
 	if err != nil {
 		return nil, err
 	}
@@ -173,8 +173,8 @@ func (srv *authorizationServer) newAS(opts AuthorizationServerOptions, issuer st
 	return as, nil
 }
 
-func (srv *authorizationServer) newManager(opts AuthorizationServerOptions, issuer string) (*manage.Manager, *JWTAccessGenerate, error) {
-	jwtGenerator := newJWTAccessGenerate(issuer, srv.privateKey, jwa.ES384)
+func (srv *authorizationServer) newManager(opts AuthorizationServerOptions, issuer string) (*manage.Manager, *JWTHandler, error) {
+	jwtGenerator := NewJWTHandler(issuer, srv.privateKey, jwa.ES384)
 	srv.setIssuerJwt = jwtGenerator.SetIssuer
 
 	manager := manage.NewDefaultManager()

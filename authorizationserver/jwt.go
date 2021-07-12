@@ -33,22 +33,22 @@ func (a *JWTAccessClaims) Valid() error {
 	return nil
 }
 
-func newJWTAccessGenerate(issuer string, key jwk.Key, method jwa.SignatureAlgorithm) *JWTAccessGenerate {
-	return &JWTAccessGenerate{
+func NewJWTHandler(issuer string, key jwk.Key, method jwa.SignatureAlgorithm) *JWTHandler {
+	return &JWTHandler{
 		Issuer:       issuer,
 		SignedKey:    key,
 		SignedMethod: method,
 	}
 }
 
-type JWTAccessGenerate struct {
+type JWTHandler struct {
 	Issuer       string
 	SignedKey    jwk.Key
 	SignedMethod jwa.SignatureAlgorithm
 }
 
-// Token based on the UUID generated token
-func (a *JWTAccessGenerate) Token(ctx context.Context, data *oauth2.GenerateBasic, isGenRefresh bool) (string, string, error) {
+// Token creates a signed access token
+func (a *JWTHandler) Token(ctx context.Context, data *oauth2.GenerateBasic, isGenRefresh bool) (string, string, error) {
 	token := jwt.New()
 	token.Set(jwt.IssuerKey, a.Issuer)
 	token.Set(jwt.AudienceKey, data.Client.GetID())
@@ -77,7 +77,8 @@ func (a *JWTAccessGenerate) Token(ctx context.Context, data *oauth2.GenerateBasi
 	return access, refresh, nil
 }
 
-func (a *JWTAccessGenerate) IDToken(ti oauth2.TokenInfo) map[string]interface{} {
+// IDToklen creates a signed id token
+func (a *JWTHandler) IDToken(ti oauth2.TokenInfo) map[string]interface{} {
 	if !strings.Contains(ti.GetScope(), "openid") {
 		return nil
 	}
@@ -121,6 +122,6 @@ func (a *JWTAccessGenerate) IDToken(ti oauth2.TokenInfo) map[string]interface{} 
 	return response
 }
 
-func (a *JWTAccessGenerate) SetIssuer(newIssuer string) {
+func (a *JWTHandler) SetIssuer(newIssuer string) {
 	a.Issuer = newIssuer
 }

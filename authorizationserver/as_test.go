@@ -86,7 +86,7 @@ func TestNewAuthorizationServer(t *testing.T) {
 }
 
 func TestAuthorizationServerE2E(t *testing.T) {
-	priv, pub, err := getRandomJWK()
+	priv, pub, err := NewJWK()
 	require.NoError(t, err)
 
 	srv := &authorizationServer{

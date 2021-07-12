@@ -11,7 +11,7 @@ import (
 	"github.com/lestrrat-go/jwx/jwk"
 )
 
-func getRandomJWK() (jwk.Key, jwk.Key, error) {
+func NewJWK() (jwk.Key, jwk.Key, error) {
 	ecdsaKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		fmt.Printf("failed to generate new ECDSA privatre key: %s\n", err)
