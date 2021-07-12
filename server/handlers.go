@@ -1,4 +1,4 @@
-package authorizationserver
+package server
 
 import (
 	"embed"
@@ -8,13 +8,13 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/go-oauth2/oauth2/v4/server"
+	asserver "github.com/go-oauth2/oauth2/v4/server"
 	"github.com/go-session/session"
 	"github.com/lestrrat-go/jwx/jwk"
 )
 
 type HandlersOptions struct {
-	AuthorizationServer *server.Server
+	AuthorizationServer *asserver.Server
 	PublicKey           jwk.Key
 	Issuer              string
 }
@@ -36,7 +36,7 @@ func (opts HandlersOptions) Validate() error {
 }
 
 type handlers struct {
-	as        *server.Server
+	as        *asserver.Server
 	publicKey jwk.Key
 	issuer    string
 }

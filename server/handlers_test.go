@@ -1,4 +1,4 @@
-package authorizationserver
+package server
 
 import (
 	"crypto/rand"
@@ -347,7 +347,7 @@ func testGetToken(t *testing.T, handlers *handlers, oauthInfo testOAuthInformati
 func testNewHandlers(t *testing.T) *handlers {
 	t.Helper()
 
-	opts := AuthorizationServerOptions{
+	opts := Options{
 		Address:      "0.0.0.0",
 		Port:         9096,
 		ClientID:     testClientID,
@@ -355,10 +355,10 @@ func testNewHandlers(t *testing.T) *handlers {
 		RedirectURI:  testRedirectURI,
 	}
 
-	priv, pub, err := NewJWK()
+	priv, pub, err := newKeys()
 	require.NoError(t, err)
 
-	srv := &authorizationServer{
+	srv := &serverHandler{
 		privateKey: priv,
 		publicKey:  pub,
 	}

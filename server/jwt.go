@@ -1,4 +1,4 @@
-package authorizationserver
+package server
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-oauth2/oauth2/v4"
-	"github.com/go-oauth2/oauth2/v4/errors"
+	asoauth2 "github.com/go-oauth2/oauth2/v4"
+	aserrors "github.com/go-oauth2/oauth2/v4/errors"
 	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jwk"
@@ -15,40 +15,40 @@ import (
 	"github.com/lestrrat-go/jwx/jwt"
 )
 
-type JWTAccessClaims struct {
+type jwtAccessClaims struct {
 	token []byte
 	jwks  jwk.Set
 }
 
-func (a *JWTAccessClaims) Valid() error {
+func (a *jwtAccessClaims) Valid() error {
 	token, err := jwt.Parse(a.token, jwt.WithKeySet(a.jwks))
 	if err != nil {
 		return err
 	}
 
 	if token.Expiration().Before(time.Now()) {
-		return errors.ErrInvalidAccessToken
+		return aserrors.ErrInvalidAccessToken
 	}
 
 	return nil
 }
 
-func NewJWTHandler(issuer string, key jwk.Key, method jwa.SignatureAlgorithm) *JWTHandler {
-	return &JWTHandler{
+func newjwtHandler(issuer string, key jwk.Key, method jwa.SignatureAlgorithm) *jwtHandler {
+	return &jwtHandler{
 		Issuer:       issuer,
 		SignedKey:    key,
 		SignedMethod: method,
 	}
 }
 
-type JWTHandler struct {
+type jwtHandler struct {
 	Issuer       string
 	SignedKey    jwk.Key
 	SignedMethod jwa.SignatureAlgorithm
 }
 
 // Token creates a signed access token
-func (a *JWTHandler) Token(ctx context.Context, data *oauth2.GenerateBasic, isGenRefresh bool) (string, string, error) {
+func (a *jwtHandler) Token(ctx context.Context, data *asoauth2.GenerateBasic, isGenRefresh bool) (string, string, error) {
 	token := jwt.New()
 	token.Set(jwt.IssuerKey, a.Issuer)
 	token.Set(jwt.AudienceKey, data.Client.GetID())
@@ -78,7 +78,7 @@ func (a *JWTHandler) Token(ctx context.Context, data *oauth2.GenerateBasic, isGe
 }
 
 // IDToklen creates a signed id token
-func (a *JWTHandler) IDToken(ti oauth2.TokenInfo) map[string]interface{} {
+func (a *jwtHandler) IDToken(ti asoauth2.TokenInfo) map[string]interface{} {
 	if !strings.Contains(ti.GetScope(), "openid") {
 		return nil
 	}
@@ -122,6 +122,6 @@ func (a *JWTHandler) IDToken(ti oauth2.TokenInfo) map[string]interface{} {
 	return response
 }
 
-func (a *JWTHandler) SetIssuer(newIssuer string) {
+func (a *jwtHandler) SetIssuer(newIssuer string) {
 	a.Issuer = newIssuer
 }

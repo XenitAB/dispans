@@ -1,4 +1,4 @@
-package authorizationserver
+package server
 
 import (
 	"context"
@@ -8,16 +8,16 @@ import (
 	"os"
 	"sync"
 
-	"github.com/go-oauth2/oauth2/v4/manage"
-	"github.com/go-oauth2/oauth2/v4/models"
-	"github.com/go-oauth2/oauth2/v4/server"
-	"github.com/go-oauth2/oauth2/v4/store"
+	asmanage "github.com/go-oauth2/oauth2/v4/manage"
+	asmodels "github.com/go-oauth2/oauth2/v4/models"
+	asserver "github.com/go-oauth2/oauth2/v4/server"
+	asstore "github.com/go-oauth2/oauth2/v4/store"
 	"github.com/gorilla/mux"
 	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jwk"
 )
 
-type AuthorizationServerOptions struct {
+type Options struct {
 	Address      string
 	Port         int
 	Issuer       string
@@ -26,7 +26,7 @@ type AuthorizationServerOptions struct {
 	RedirectURI  string
 }
 
-func (opts AuthorizationServerOptions) Validate() error {
+func (opts Options) Validate() error {
 	if opts.Address == "" {
 		return fmt.Errorf("Address is empty")
 	}
@@ -54,7 +54,7 @@ func (opts AuthorizationServerOptions) Validate() error {
 	return nil
 }
 
-type authorizationServer struct {
+type serverHandler struct {
 	http              *http.Server
 	privateKey        jwk.Key
 	publicKey         jwk.Key
@@ -62,18 +62,18 @@ type authorizationServer struct {
 	setIssuerHandlers func(newIssuer string)
 }
 
-func NewAuthorizationServer(opts AuthorizationServerOptions) (*authorizationServer, error) {
+func New(opts Options) (*serverHandler, error) {
 	err := opts.Validate()
 	if err != nil {
 		return nil, err
 	}
 
-	priv, pub, err := NewJWK()
+	priv, pub, err := newKeys()
 	if err != nil {
 		return nil, err
 	}
 
-	srv := &authorizationServer{
+	srv := &serverHandler{
 		privateKey: priv,
 		publicKey:  pub,
 	}
@@ -98,7 +98,7 @@ func NewAuthorizationServer(opts AuthorizationServerOptions) (*authorizationServ
 	return srv, nil
 }
 
-func (srv *authorizationServer) Start(ctx context.Context, wg *sync.WaitGroup) error {
+func (srv *serverHandler) Start(ctx context.Context, wg *sync.WaitGroup) error {
 	wg.Done()
 
 	fmt.Printf("starting authorization webserver: %s\n", srv.http.Addr)
@@ -112,7 +112,7 @@ func (srv *authorizationServer) Start(ctx context.Context, wg *sync.WaitGroup) e
 	return nil
 }
 
-func (srv *authorizationServer) Stop(ctx context.Context) error {
+func (srv *serverHandler) Stop(ctx context.Context) error {
 	err := srv.http.Shutdown(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "web server failed to stop gracefully: %v\n", err)
@@ -124,7 +124,7 @@ func (srv *authorizationServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (srv *authorizationServer) newRouter(as *server.Server, issuer string) (http.Handler, error) {
+func (srv *serverHandler) newRouter(as *asserver.Server, issuer string) (http.Handler, error) {
 	handlersOpts := HandlersOptions{
 		AuthorizationServer: as,
 		PublicKey:           srv.publicKey,
@@ -150,13 +150,13 @@ func (srv *authorizationServer) newRouter(as *server.Server, issuer string) (htt
 	return router, nil
 }
 
-func (srv *authorizationServer) newAS(opts AuthorizationServerOptions, issuer string) (*server.Server, error) {
+func (srv *serverHandler) newAS(opts Options, issuer string) (*asserver.Server, error) {
 	manager, jwtGenerator, err := srv.newManager(opts, issuer)
 	if err != nil {
 		return nil, err
 	}
 
-	as := server.NewServer(server.NewConfig(), manager)
+	as := asserver.NewServer(asserver.NewConfig(), manager)
 
 	asHandlers, err := newASHandlers(ASHandlersOptions{})
 	if err != nil {
@@ -173,17 +173,17 @@ func (srv *authorizationServer) newAS(opts AuthorizationServerOptions, issuer st
 	return as, nil
 }
 
-func (srv *authorizationServer) newManager(opts AuthorizationServerOptions, issuer string) (*manage.Manager, *JWTHandler, error) {
-	jwtGenerator := NewJWTHandler(issuer, srv.privateKey, jwa.ES384)
+func (srv *serverHandler) newManager(opts Options, issuer string) (*asmanage.Manager, *jwtHandler, error) {
+	jwtGenerator := newjwtHandler(issuer, srv.privateKey, jwa.ES384)
 	srv.setIssuerJwt = jwtGenerator.SetIssuer
 
-	manager := manage.NewDefaultManager()
-	manager.SetAuthorizeCodeTokenCfg(manage.DefaultAuthorizeCodeTokenCfg)
-	manager.MustTokenStorage(store.NewMemoryTokenStore())
+	manager := asmanage.NewDefaultManager()
+	manager.SetAuthorizeCodeTokenCfg(asmanage.DefaultAuthorizeCodeTokenCfg)
+	manager.MustTokenStorage(asstore.NewMemoryTokenStore())
 	manager.MapAccessGenerate(jwtGenerator)
 
-	clientStore := store.NewClientStore()
-	clientStore.Set(opts.ClientID, &models.Client{
+	clientStore := asstore.NewClientStore()
+	clientStore.Set(opts.ClientID, &asmodels.Client{
 		ID:     opts.ClientID,
 		Secret: opts.ClientSecret,
 		Domain: opts.RedirectURI,
@@ -193,7 +193,7 @@ func (srv *authorizationServer) newManager(opts AuthorizationServerOptions, issu
 	return manager, jwtGenerator, nil
 }
 
-func (srv *authorizationServer) SetIssuer(newIssuer string) {
+func (srv *serverHandler) SetIssuer(newIssuer string) {
 	srv.setIssuerHandlers(newIssuer)
 	srv.setIssuerJwt(newIssuer)
 }
