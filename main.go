@@ -6,7 +6,7 @@ import (
 	"os/signal"
 
 	"github.com/cristalhq/aconfig"
-	"github.com/xenitab/dispans/pkg/server"
+	"github.com/xenitab/dispans/server"
 	"github.com/xenitab/pkg/service"
 )
 

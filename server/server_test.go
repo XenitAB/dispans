@@ -16,12 +16,12 @@ import (
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/stretchr/testify/require"
-	"github.com/xenitab/dispans/pkg/as"
-	"github.com/xenitab/dispans/pkg/authority"
-	"github.com/xenitab/dispans/pkg/helper"
-	"github.com/xenitab/dispans/pkg/key"
-	"github.com/xenitab/dispans/pkg/token"
-	"github.com/xenitab/dispans/pkg/user"
+	"github.com/xenitab/dispans/as"
+	"github.com/xenitab/dispans/authority"
+	"github.com/xenitab/dispans/helper"
+	"github.com/xenitab/dispans/key"
+	"github.com/xenitab/dispans/token"
+	"github.com/xenitab/dispans/user"
 	"github.com/xenitab/pkg/service"
 )
 

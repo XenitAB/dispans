@@ -7,7 +7,7 @@ import (
 	asmodels "github.com/go-oauth2/oauth2/v4/models"
 	asserver "github.com/go-oauth2/oauth2/v4/server"
 	asstore "github.com/go-oauth2/oauth2/v4/store"
-	"github.com/xenitab/dispans/pkg/models"
+	"github.com/xenitab/dispans/models"
 )
 
 type Options struct {

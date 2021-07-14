@@ -10,7 +10,7 @@ import (
 
 	asserver "github.com/go-oauth2/oauth2/v4/server"
 	"github.com/go-session/session"
-	"github.com/xenitab/dispans/pkg/models"
+	"github.com/xenitab/dispans/models"
 )
 
 type Options struct {
