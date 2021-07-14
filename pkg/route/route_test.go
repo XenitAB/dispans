@@ -1,13 +1,9 @@
-package server
+package route
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,11 +11,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/stretchr/testify/require"
-	"github.com/xenitab/dispans/authority"
-	"github.com/xenitab/dispans/key"
+	"github.com/xenitab/dispans/pkg/as"
+	"github.com/xenitab/dispans/pkg/authority"
+	"github.com/xenitab/dispans/pkg/helper"
+	"github.com/xenitab/dispans/pkg/key"
+	"github.com/xenitab/dispans/pkg/models"
+	"github.com/xenitab/dispans/pkg/token"
+	"github.com/xenitab/dispans/pkg/user"
 )
 
 const (
@@ -37,13 +39,13 @@ var (
 )
 
 func TestAuthorizeWithoutCookie(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, testDefaultScope)
 
 	req := httptest.NewRequest("GET", oauthInfo.authzURLString, nil)
 	w := httptest.NewRecorder()
-	handlers.authorize(w, req)
+	routeHandler.Authorize(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
@@ -51,17 +53,17 @@ func TestAuthorizeWithoutCookie(t *testing.T) {
 }
 
 func TestLoginGet(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, testDefaultScope)
 
-	cookies := testGetAuthorizeCookie(t, handlers, oauthInfo)
+	cookies := testGetAuthorizeCookie(t, routeHandler, oauthInfo)
 
 	req := httptest.NewRequest("GET", "/login", nil)
 	testAddCookiesToRequest(t, req, cookies)
 
 	w := httptest.NewRecorder()
-	handlers.login(w, req)
+	routeHandler.Login(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -69,19 +71,19 @@ func TestLoginGet(t *testing.T) {
 }
 
 func TestLoginPost(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, testDefaultScope)
 
-	_ = testGetAuthorizeCookieAndLogin(t, handlers, oauthInfo)
+	_ = testGetAuthorizeCookieAndLogin(t, routeHandler, oauthInfo)
 }
 
 func TestLoginWithWrongUsername(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, testDefaultScope)
 
-	cookies := testGetAuthorizeCookie(t, handlers, oauthInfo)
+	cookies := testGetAuthorizeCookie(t, routeHandler, oauthInfo)
 
 	reqForm := url.Values{}
 	reqForm.Add("username", "wrong-username")
@@ -92,56 +94,56 @@ func TestLoginWithWrongUsername(t *testing.T) {
 	testAddCookiesToRequest(t, req, cookies)
 
 	w := httptest.NewRecorder()
-	handlers.login(w, req)
+	routeHandler.Login(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
 
 func TestAuthorizeWithCookie(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, testDefaultScope)
 
-	_ = testGetAuthorizationCode(t, handlers, oauthInfo)
+	_ = testGetAuthorizationCode(t, routeHandler, oauthInfo)
 }
 
 func TestToken(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, testDefaultScope)
 
-	code := testGetAuthorizationCode(t, handlers, oauthInfo)
+	code := testGetAuthorizationCode(t, routeHandler, oauthInfo)
 
-	tokenResponse := testGetToken(t, handlers, oauthInfo, code)
+	tokenResponse := testGetToken(t, routeHandler, oauthInfo, code)
 	require.Empty(t, tokenResponse.IDToken)
 }
 
 func TestIDToken(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, "openid")
 
-	code := testGetAuthorizationCode(t, handlers, oauthInfo)
+	code := testGetAuthorizationCode(t, routeHandler, oauthInfo)
 
-	tokenResponse := testGetToken(t, handlers, oauthInfo, code)
+	tokenResponse := testGetToken(t, routeHandler, oauthInfo, code)
 	require.NotEmpty(t, tokenResponse.IDToken)
 }
 
 func TestTestEndpoint(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, testDefaultScope)
 
-	code := testGetAuthorizationCode(t, handlers, oauthInfo)
+	code := testGetAuthorizationCode(t, routeHandler, oauthInfo)
 
-	tokenResponse := testGetToken(t, handlers, oauthInfo, code)
+	tokenResponse := testGetToken(t, routeHandler, oauthInfo, code)
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Header.Add("Authorization", fmt.Sprintf("%s %s", tokenResponse.TokenType, tokenResponse.AccessToken))
 
 	w := httptest.NewRecorder()
-	handlers.test(w, req)
+	routeHandler.Test(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -166,18 +168,18 @@ func TestTestEndpoint(t *testing.T) {
 }
 
 func TestJwk(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, "openid profile email")
 
-	code := testGetAuthorizationCode(t, handlers, oauthInfo)
+	code := testGetAuthorizationCode(t, routeHandler, oauthInfo)
 
-	tokenResponse := testGetToken(t, handlers, oauthInfo, code)
+	tokenResponse := testGetToken(t, routeHandler, oauthInfo, code)
 
 	req := httptest.NewRequest("GET", "/jwk", nil)
 
 	w := httptest.NewRecorder()
-	handlers.jwk(w, req)
+	routeHandler.Jwk(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -194,7 +196,7 @@ func TestJwk(t *testing.T) {
 	accessToken, err := jwt.Parse([]byte(tokenResponse.AccessToken), jwt.WithKeySet(keySet))
 	require.NoError(t, err)
 
-	require.Equal(t, handlers.issuerHandler.GetIssuer(), accessToken.Issuer())
+	require.Equal(t, routeHandler.issuerHandler.GetIssuer(), accessToken.Issuer())
 	require.Equal(t, testClientID, accessToken.Audience()[0])
 	require.Equal(t, testUsername, accessToken.Subject())
 	require.WithinDuration(t, time.Now(), accessToken.NotBefore(), 1*time.Second)
@@ -203,7 +205,7 @@ func TestJwk(t *testing.T) {
 	idToken, err := jwt.Parse([]byte(tokenResponse.IDToken), jwt.WithKeySet(keySet))
 	require.NoError(t, err)
 
-	require.Equal(t, handlers.issuerHandler.GetIssuer(), idToken.Issuer())
+	require.Equal(t, routeHandler.issuerHandler.GetIssuer(), idToken.Issuer())
 	require.Equal(t, testClientID, idToken.Audience()[0])
 	require.Equal(t, testUsername, idToken.Subject())
 	require.Equal(t, "test testsson", idToken.PrivateClaims()["name"])
@@ -213,12 +215,12 @@ func TestJwk(t *testing.T) {
 }
 
 func TestDiscovery(t *testing.T) {
-	handlers := testNewHandlers(t)
+	routeHandler := testNewRouteHandler(t)
 
 	req := httptest.NewRequest("GET", "/.well-known/openid-configuration", nil)
 
 	w := httptest.NewRecorder()
-	handlers.discovery(w, req)
+	routeHandler.Discovery(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -237,7 +239,7 @@ func TestDiscovery(t *testing.T) {
 	err = json.Unmarshal(bodyBytes, &discoveryData)
 	require.NoError(t, err)
 
-	require.Equal(t, handlers.issuerHandler.GetIssuer(), discoveryData.Issuer)
+	require.Equal(t, routeHandler.issuerHandler.GetIssuer(), discoveryData.Issuer)
 	require.Contains(t, discoveryData.JwksUri, "/jwk")
 }
 
@@ -251,12 +253,12 @@ func testAddCookiesToRequest(t *testing.T, req *http.Request, cookies []*http.Co
 	}
 }
 
-func testGetAuthorizeCookie(t *testing.T, handlers *handlers, oauthInfo testOAuthInformation) []*http.Cookie {
+func testGetAuthorizeCookie(t *testing.T, routeHandler *handler, oauthInfo testOAuthInformation) []*http.Cookie {
 	t.Helper()
 
 	req := httptest.NewRequest("GET", oauthInfo.authzURLString, nil)
 	w := httptest.NewRecorder()
-	handlers.authorize(w, req)
+	routeHandler.Authorize(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
@@ -265,8 +267,8 @@ func testGetAuthorizeCookie(t *testing.T, handlers *handlers, oauthInfo testOAut
 	return res.Cookies()
 }
 
-func testGetAuthorizeCookieAndLogin(t *testing.T, handlers *handlers, oauthInfo testOAuthInformation) []*http.Cookie {
-	cookies := testGetAuthorizeCookie(t, handlers, oauthInfo)
+func testGetAuthorizeCookieAndLogin(t *testing.T, routeHandler *handler, oauthInfo testOAuthInformation) []*http.Cookie {
+	cookies := testGetAuthorizeCookie(t, routeHandler, oauthInfo)
 
 	reqForm := url.Values{}
 	reqForm.Add("username", testUsername)
@@ -277,7 +279,7 @@ func testGetAuthorizeCookieAndLogin(t *testing.T, handlers *handlers, oauthInfo 
 	testAddCookiesToRequest(t, req, cookies)
 
 	w := httptest.NewRecorder()
-	handlers.login(w, req)
+	routeHandler.Login(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
@@ -286,14 +288,14 @@ func testGetAuthorizeCookieAndLogin(t *testing.T, handlers *handlers, oauthInfo 
 	return cookies
 }
 
-func testGetAuthorizationCode(t *testing.T, handlers *handlers, oauthInfo testOAuthInformation) string {
-	cookies := testGetAuthorizeCookieAndLogin(t, handlers, oauthInfo)
+func testGetAuthorizationCode(t *testing.T, routeHandler *handler, oauthInfo testOAuthInformation) string {
+	cookies := testGetAuthorizeCookieAndLogin(t, routeHandler, oauthInfo)
 
 	req := httptest.NewRequest("GET", "/oauth/authorize", nil)
 	testAddCookiesToRequest(t, req, cookies)
 
 	w := httptest.NewRecorder()
-	handlers.authorize(w, req)
+	routeHandler.Authorize(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
@@ -311,7 +313,7 @@ func testGetAuthorizationCode(t *testing.T, handlers *handlers, oauthInfo testOA
 	return queryValues.Get("code")
 }
 
-func testGetToken(t *testing.T, handlers *handlers, oauthInfo testOAuthInformation, code string) testTokenResponse {
+func testGetToken(t *testing.T, routeHandler *handler, oauthInfo testOAuthInformation, code string) models.TokenResponse {
 	t.Helper()
 
 	data := url.Values{}
@@ -326,7 +328,7 @@ func testGetToken(t *testing.T, handlers *handlers, oauthInfo testOAuthInformati
 	req.SetBasicAuth(url.QueryEscape(testClientID), url.QueryEscape(testClientSecret))
 
 	w := httptest.NewRecorder()
-	handlers.token(w, req)
+	routeHandler.Token(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -338,7 +340,7 @@ func testGetToken(t *testing.T, handlers *handlers, oauthInfo testOAuthInformati
 	err = res.Body.Close()
 	require.NoError(t, err)
 
-	var tokenResponse testTokenResponse
+	var tokenResponse models.TokenResponse
 
 	err = json.Unmarshal(bodyBytes, &tokenResponse)
 	require.NoError(t, err)
@@ -346,23 +348,11 @@ func testGetToken(t *testing.T, handlers *handlers, oauthInfo testOAuthInformati
 	return tokenResponse
 }
 
-func testNewHandlers(t *testing.T) *handlers {
+func testNewRouteHandler(t *testing.T) *handler {
 	t.Helper()
-
-	opts := Options{
-		Address:      "0.0.0.0",
-		Port:         9096,
-		ClientID:     testClientID,
-		ClientSecret: testClientSecret,
-		RedirectURI:  testRedirectURI,
-	}
 
 	keyHandler, err := key.NewHandler()
 	require.NoError(t, err)
-
-	srv := &serverHandler{
-		keyHandler: keyHandler,
-	}
 
 	authorityOpts := authority.Options{
 		Issuer: "http://test.foo",
@@ -371,62 +361,43 @@ func testNewHandlers(t *testing.T) *handlers {
 	authorityHandler, err := authority.NewHandler(authorityOpts)
 	require.NoError(t, err)
 
-	as, err := srv.newAS(opts, authorityHandler)
+	userHandler := user.NewHandler()
+
+	tokenOpts := token.Options{
+		UserHandler:       userHandler,
+		IssuerHandler:     authorityHandler,
+		PrivateKeyHandler: keyHandler,
+		SigningMethod:     jwa.ES384,
+	}
+
+	tokenHandler, err := token.NewHandler(tokenOpts)
 	require.NoError(t, err)
 
-	handlersOpts := HandlersOptions{
+	asOptions := as.Options{
+		UserHandler:   userHandler,
+		TokenHandler:  tokenHandler,
+		IssuerHandler: authorityHandler,
+		ClientID:      testClientID,
+		ClientSecret:  testClientSecret,
+		RedirectURI:   testRedirectURI,
+	}
+
+	asHandler, err := as.NewHandler(asOptions)
+	require.NoError(t, err)
+
+	as, err := asHandler.NewAuthorizationServer()
+	require.NoError(t, err)
+
+	handlersOpts := Options{
 		AuthorizationServer: as,
 		PublicKeyHandler:    keyHandler,
 		IssuerHandler:       authorityHandler,
 	}
 
-	handlers, err := newHandlers(handlersOpts)
+	handlers, err := NewHandler(handlersOpts)
 	require.NoError(t, err)
 
 	return handlers
-}
-
-func testGenerateCodeChallengeS256(t *testing.T) (string, string) {
-	t.Helper()
-
-	codeVerifier := testGenerateRandomString(t, 32)
-
-	s256 := sha256.Sum256([]byte(codeVerifier))
-	codeChallenge := base64.URLEncoding.EncodeToString(s256[:])
-
-	return codeVerifier, codeChallenge
-}
-
-func testGenerateState(t *testing.T) string {
-	t.Helper()
-
-	stateString := testGenerateRandomString(t, 32)
-
-	s256 := sha256.Sum256([]byte(stateString))
-	state := base64.URLEncoding.EncodeToString(s256[:])
-	state = strings.TrimSuffix(state, "=")
-
-	return state
-}
-
-func testGenerateRandomString(t *testing.T, length int) string {
-	t.Helper()
-
-	result := ""
-	for {
-		if len(result) >= length {
-			return result
-		}
-
-		num, err := rand.Int(rand.Reader, big.NewInt(int64(127)))
-		require.NoError(t, err)
-
-		n := num.Int64()
-
-		if n > 32 && n < 127 {
-			result += fmt.Sprint(n)
-		}
-	}
 }
 
 type testOAuthInformation struct {
@@ -437,20 +408,14 @@ type testOAuthInformation struct {
 	state          string
 }
 
-type testTokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	ExpiresIn    int64  `json:"expires_in"`
-	RefreshToken string `json:"refresh_token"`
-	Scope        string `json:"scope"`
-	TokenType    string `json:"token_type"`
-	IDToken      string `json:"id_token"`
-}
-
 func testGetOAuthInformation(t *testing.T, scope string) testOAuthInformation {
 	t.Helper()
 
-	codeVerifier, codeChallange := testGenerateCodeChallengeS256(t)
-	state := testGenerateState(t)
+	codeVerifier, codeChallange, err := helper.GenerateCodeChallengeS256()
+	require.NoError(t, err)
+
+	state, err := helper.GenerateState()
+	require.NoError(t, err)
 
 	authzUrl := &url.URL{}
 	authzUrl.Path = "/oauth/authorize"

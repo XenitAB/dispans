@@ -9,7 +9,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jwk"
-	"github.com/xenitab/dispans/models"
+	"github.com/xenitab/dispans/pkg/models"
 )
 
 type handler struct {
