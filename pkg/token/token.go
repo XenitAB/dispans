@@ -11,7 +11,7 @@ import (
 	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jws"
 	"github.com/lestrrat-go/jwx/jwt"
-	"github.com/xenitab/dispans/models"
+	"github.com/xenitab/dispans/pkg/models"
 )
 
 type Options struct {

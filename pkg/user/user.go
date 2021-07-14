@@ -3,7 +3,7 @@ package user
 import (
 	"fmt"
 
-	"github.com/xenitab/dispans/models"
+	"github.com/xenitab/dispans/pkg/models"
 )
 
 type Handler struct {

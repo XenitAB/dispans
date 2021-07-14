@@ -12,11 +12,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/stretchr/testify/require"
-	"github.com/xenitab/dispans/authority"
-	"github.com/xenitab/dispans/key"
+	"github.com/xenitab/dispans/pkg/as"
+	"github.com/xenitab/dispans/pkg/authority"
+	"github.com/xenitab/dispans/pkg/helper"
+	"github.com/xenitab/dispans/pkg/key"
+	"github.com/xenitab/dispans/pkg/token"
+	"github.com/xenitab/dispans/pkg/user"
 	"github.com/xenitab/pkg/service"
 )
 
@@ -91,10 +96,6 @@ func TestAuthorizationServerE2E(t *testing.T) {
 	keyHandler, err := key.NewHandler()
 	require.NoError(t, err)
 
-	srv := &serverHandler{
-		keyHandler: keyHandler,
-	}
-
 	clientID := "foo"
 	clientSecret := "bar"
 	redirectURI := "http://foo.bar/baz"
@@ -112,10 +113,34 @@ func TestAuthorizationServerE2E(t *testing.T) {
 	authorityHandler, err := authority.NewHandler(authorityOpts)
 	require.NoError(t, err)
 
-	as, err := srv.newAS(opts, authorityHandler)
+	userHandler := user.NewHandler()
+
+	tokenOpts := token.Options{
+		UserHandler:       userHandler,
+		IssuerHandler:     authorityHandler,
+		PrivateKeyHandler: keyHandler,
+		SigningMethod:     jwa.ES384,
+	}
+
+	tokenHandler, err := token.NewHandler(tokenOpts)
 	require.NoError(t, err)
 
-	router, err := srv.newRouter(as, authorityHandler)
+	asOptions := as.Options{
+		UserHandler:   userHandler,
+		TokenHandler:  tokenHandler,
+		IssuerHandler: authorityHandler,
+		ClientID:      opts.ClientID,
+		ClientSecret:  opts.ClientSecret,
+		RedirectURI:   opts.RedirectURI,
+	}
+
+	asHandler, err := as.NewHandler(asOptions)
+	require.NoError(t, err)
+
+	as, err := asHandler.NewAuthorizationServer()
+	require.NoError(t, err)
+
+	router, err := newRouter(as, authorityHandler, keyHandler)
 	require.NoError(t, err)
 
 	testServer := httptest.NewServer(router)
@@ -131,8 +156,11 @@ func TestAuthorizationServerE2E(t *testing.T) {
 		return http.ErrUseLastResponse
 	}
 
-	codeVerifier, codeChallange := testGenerateCodeChallengeS256(t)
-	state := testGenerateState(t)
+	codeVerifier, codeChallange, err := helper.GenerateCodeChallengeS256()
+	require.NoError(t, err)
+
+	state, err := helper.GenerateState()
+	require.NoError(t, err)
 
 	// Request #1 - GET /oauth/authorize without cookies
 	testGetAuthorizeE2E(t, httpClient, testServer.URL, clientID, codeChallange, redirectURI, state)
@@ -219,8 +247,8 @@ func testPostLoginE2E(t *testing.T, httpClient *http.Client, remote string) {
 	remoteUrl.Path = "/login"
 
 	form := url.Values{}
-	form.Add("username", testUsername)
-	form.Add("password", testPassword)
+	form.Add("username", "test")
+	form.Add("password", "test")
 
 	body := strings.NewReader(form.Encode())
 
@@ -358,6 +386,15 @@ func testDiscoveryE2E(t *testing.T, httpClient *http.Client, remote string) {
 	require.Equal(t, fmt.Sprintf("%s/jwk", remote), discoveryData.JwksUri)
 }
 
+type testTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+	Scope        string `json:"scope"`
+	TokenType    string `json:"token_type"`
+	IDToken      string `json:"id_token"`
+}
+
 func testValidateTokenResponse(t *testing.T, tokenResponseBytes []byte, keySet jwk.Set, clientID string, remote string) {
 	var tokenResponse testTokenResponse
 	err := json.Unmarshal(tokenResponseBytes, &tokenResponse)
@@ -368,7 +405,7 @@ func testValidateTokenResponse(t *testing.T, tokenResponseBytes []byte, keySet j
 
 	require.Equal(t, remote, token.Issuer())
 	require.Equal(t, clientID, token.Audience()[0])
-	require.Equal(t, testUsername, token.Subject())
+	require.Equal(t, "test", token.Subject())
 	require.WithinDuration(t, time.Now(), token.NotBefore(), 1*time.Second)
 	require.WithinDuration(t, time.Now().Add(2*time.Hour), token.Expiration(), 1*time.Second)
 }
