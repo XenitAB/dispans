@@ -15,6 +15,8 @@ import (
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/stretchr/testify/require"
+	"github.com/xenitab/dispans/authority"
+	"github.com/xenitab/dispans/key"
 	"github.com/xenitab/pkg/service"
 )
 
@@ -86,12 +88,11 @@ func TestNew(t *testing.T) {
 }
 
 func TestAuthorizationServerE2E(t *testing.T) {
-	priv, pub, err := newKeys()
+	keyHandler, err := key.NewHandler()
 	require.NoError(t, err)
 
 	srv := &serverHandler{
-		privateKey: priv,
-		publicKey:  pub,
+		keyHandler: keyHandler,
 	}
 
 	clientID := "foo"
@@ -104,15 +105,22 @@ func TestAuthorizationServerE2E(t *testing.T) {
 		RedirectURI:  redirectURI,
 	}
 
-	as, err := srv.newAS(opts, "temporary")
+	authorityOpts := authority.Options{
+		Issuer: "temporary",
+	}
+
+	authorityHandler, err := authority.NewHandler(authorityOpts)
 	require.NoError(t, err)
 
-	router, err := srv.newRouter(as, "temporary")
+	as, err := srv.newAS(opts, authorityHandler)
+	require.NoError(t, err)
+
+	router, err := srv.newRouter(as, authorityHandler)
 	require.NoError(t, err)
 
 	testServer := httptest.NewServer(router)
 
-	srv.SetIssuer(testServer.URL)
+	authorityHandler.SetIssuer(testServer.URL)
 
 	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)

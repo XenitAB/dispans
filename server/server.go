@@ -14,7 +14,11 @@ import (
 	asstore "github.com/go-oauth2/oauth2/v4/store"
 	"github.com/gorilla/mux"
 	"github.com/lestrrat-go/jwx/jwa"
-	"github.com/lestrrat-go/jwx/jwk"
+	"github.com/xenitab/dispans/authority"
+	"github.com/xenitab/dispans/key"
+	"github.com/xenitab/dispans/models"
+	"github.com/xenitab/dispans/token"
+	"github.com/xenitab/dispans/user"
 )
 
 type Options struct {
@@ -55,11 +59,9 @@ func (opts Options) Validate() error {
 }
 
 type serverHandler struct {
-	http              *http.Server
-	privateKey        jwk.Key
-	publicKey         jwk.Key
-	setIssuerJwt      func(newIssuer string)
-	setIssuerHandlers func(newIssuer string)
+	http          *http.Server
+	keyHandler    models.KeysGetter
+	issuerHandler models.IssuerGetSetter
 }
 
 func New(opts Options) (*serverHandler, error) {
@@ -68,22 +70,30 @@ func New(opts Options) (*serverHandler, error) {
 		return nil, err
 	}
 
-	priv, pub, err := newKeys()
+	authorityOpts := authority.Options{
+		Issuer: opts.Issuer,
+	}
+
+	authorityHandler, err := authority.NewHandler(authorityOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	keyHandler, err := key.NewHandler()
 	if err != nil {
 		return nil, err
 	}
 
 	srv := &serverHandler{
-		privateKey: priv,
-		publicKey:  pub,
+		keyHandler: keyHandler,
 	}
 
-	as, err := srv.newAS(opts, opts.Issuer)
+	as, err := srv.newAS(opts, authorityHandler)
 	if err != nil {
 		return nil, err
 	}
 
-	router, err := srv.newRouter(as, opts.Issuer)
+	router, err := srv.newRouter(as, authorityHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -124,19 +134,17 @@ func (srv *serverHandler) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (srv *serverHandler) newRouter(as *asserver.Server, issuer string) (http.Handler, error) {
+func (srv *serverHandler) newRouter(as *asserver.Server, issuerHandler models.IssuerGetter) (http.Handler, error) {
 	handlersOpts := HandlersOptions{
 		AuthorizationServer: as,
-		PublicKey:           srv.publicKey,
-		Issuer:              issuer,
+		PublicKeyHandler:    srv.keyHandler,
+		IssuerHandler:       issuerHandler,
 	}
 
 	handlers, err := newHandlers(handlersOpts)
 	if err != nil {
 		return nil, err
 	}
-
-	srv.setIssuerHandlers = handlers.SetIssuer
 
 	router := mux.NewRouter()
 
@@ -150,8 +158,21 @@ func (srv *serverHandler) newRouter(as *asserver.Server, issuer string) (http.Ha
 	return router, nil
 }
 
-func (srv *serverHandler) newAS(opts Options, issuer string) (*asserver.Server, error) {
-	manager, jwtGenerator, err := srv.newManager(opts, issuer)
+func (srv *serverHandler) newAS(opts Options, issuerHandler models.IssuerGetter) (*asserver.Server, error) {
+	userHandler := user.NewHandler()
+
+	tokenOpts := token.Options{
+		UserHandler:       userHandler,
+		IssuerHandler:     issuerHandler,
+		PrivateKeyHandler: srv.keyHandler,
+		SigningMethod:     jwa.ES384,
+	}
+	tokenHandler, err := token.NewHandler(tokenOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	manager, err := srv.newManager(opts, tokenHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -168,19 +189,16 @@ func (srv *serverHandler) newAS(opts Options, issuer string) (*asserver.Server, 
 	as.SetInternalErrorHandler(asHandlers.internalError)
 	as.SetResponseErrorHandler(asHandlers.responseError)
 
-	as.SetExtensionFieldsHandler(jwtGenerator.IDToken)
+	as.SetExtensionFieldsHandler(tokenHandler.ExtensionFieldsHandler)
 
 	return as, nil
 }
 
-func (srv *serverHandler) newManager(opts Options, issuer string) (*asmanage.Manager, *jwtHandler, error) {
-	jwtGenerator := newjwtHandler(issuer, srv.privateKey, jwa.ES384)
-	srv.setIssuerJwt = jwtGenerator.SetIssuer
-
+func (srv *serverHandler) newManager(opts Options, tokenHandler models.AccessTokenGetter) (*asmanage.Manager, error) {
 	manager := asmanage.NewDefaultManager()
 	manager.SetAuthorizeCodeTokenCfg(asmanage.DefaultAuthorizeCodeTokenCfg)
 	manager.MustTokenStorage(asstore.NewMemoryTokenStore())
-	manager.MapAccessGenerate(jwtGenerator)
+	manager.MapAccessGenerate(tokenHandler)
 
 	clientStore := asstore.NewClientStore()
 	clientStore.Set(opts.ClientID, &asmodels.Client{
@@ -190,10 +208,5 @@ func (srv *serverHandler) newManager(opts Options, issuer string) (*asmanage.Man
 	})
 	manager.MapClientStorage(clientStore)
 
-	return manager, jwtGenerator, nil
-}
-
-func (srv *serverHandler) SetIssuer(newIssuer string) {
-	srv.setIssuerHandlers(newIssuer)
-	srv.setIssuerJwt(newIssuer)
+	return manager, nil
 }

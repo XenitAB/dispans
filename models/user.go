@@ -1,4 +1,4 @@
-package server
+package models
 
 type User struct {
 	UserID        string `json:"sub"`
@@ -10,18 +10,8 @@ type User struct {
 	Locale        string `json:"locale,omitempty"`
 }
 
-func GetUserByID(userID string) (User, error) {
-	return User{
-		UserID:        userID,
-		Email:         "test@test.com",
-		EmailVerified: boolPtr(true),
-		Name:          "test testsson",
-		FamilyName:    "testsson",
-		GivenName:     "test",
-		Locale:        "US",
-	}, nil
-}
+type Users map[string]User
 
-func boolPtr(b bool) *bool {
-	return &b
+type UserGetter interface {
+	GetUserByID(userID string) (User, error)
 }

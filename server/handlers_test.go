@@ -18,6 +18,8 @@ import (
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/stretchr/testify/require"
+	"github.com/xenitab/dispans/authority"
+	"github.com/xenitab/dispans/key"
 )
 
 const (
@@ -192,7 +194,7 @@ func TestJwk(t *testing.T) {
 	accessToken, err := jwt.Parse([]byte(tokenResponse.AccessToken), jwt.WithKeySet(keySet))
 	require.NoError(t, err)
 
-	require.Equal(t, handlers.issuer, accessToken.Issuer())
+	require.Equal(t, handlers.issuerHandler.GetIssuer(), accessToken.Issuer())
 	require.Equal(t, testClientID, accessToken.Audience()[0])
 	require.Equal(t, testUsername, accessToken.Subject())
 	require.WithinDuration(t, time.Now(), accessToken.NotBefore(), 1*time.Second)
@@ -201,7 +203,7 @@ func TestJwk(t *testing.T) {
 	idToken, err := jwt.Parse([]byte(tokenResponse.IDToken), jwt.WithKeySet(keySet))
 	require.NoError(t, err)
 
-	require.Equal(t, handlers.issuer, idToken.Issuer())
+	require.Equal(t, handlers.issuerHandler.GetIssuer(), idToken.Issuer())
 	require.Equal(t, testClientID, idToken.Audience()[0])
 	require.Equal(t, testUsername, idToken.Subject())
 	require.Equal(t, "test testsson", idToken.PrivateClaims()["name"])
@@ -235,7 +237,7 @@ func TestDiscovery(t *testing.T) {
 	err = json.Unmarshal(bodyBytes, &discoveryData)
 	require.NoError(t, err)
 
-	require.Equal(t, handlers.issuer, discoveryData.Issuer)
+	require.Equal(t, handlers.issuerHandler.GetIssuer(), discoveryData.Issuer)
 	require.Contains(t, discoveryData.JwksUri, "/jwk")
 }
 
@@ -355,23 +357,27 @@ func testNewHandlers(t *testing.T) *handlers {
 		RedirectURI:  testRedirectURI,
 	}
 
-	priv, pub, err := newKeys()
+	keyHandler, err := key.NewHandler()
 	require.NoError(t, err)
 
 	srv := &serverHandler{
-		privateKey: priv,
-		publicKey:  pub,
+		keyHandler: keyHandler,
 	}
 
-	issuer := "http://test.foo"
+	authorityOpts := authority.Options{
+		Issuer: "http://test.foo",
+	}
 
-	as, err := srv.newAS(opts, issuer)
+	authorityHandler, err := authority.NewHandler(authorityOpts)
+	require.NoError(t, err)
+
+	as, err := srv.newAS(opts, authorityHandler)
 	require.NoError(t, err)
 
 	handlersOpts := HandlersOptions{
 		AuthorizationServer: as,
-		PublicKey:           srv.publicKey,
-		Issuer:              issuer,
+		PublicKeyHandler:    keyHandler,
+		IssuerHandler:       authorityHandler,
 	}
 
 	handlers, err := newHandlers(handlersOpts)
