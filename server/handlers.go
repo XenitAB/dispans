@@ -10,13 +10,13 @@ import (
 
 	asserver "github.com/go-oauth2/oauth2/v4/server"
 	"github.com/go-session/session"
-	"github.com/lestrrat-go/jwx/jwk"
+	"github.com/xenitab/dispans/models"
 )
 
 type HandlersOptions struct {
 	AuthorizationServer *asserver.Server
-	PublicKey           jwk.Key
-	Issuer              string
+	PublicKeyHandler    models.PublicKeyGetter
+	IssuerHandler       models.IssuerGetter
 }
 
 func (opts HandlersOptions) Validate() error {
@@ -24,21 +24,21 @@ func (opts HandlersOptions) Validate() error {
 		return fmt.Errorf("AuthorizationServer is nil")
 	}
 
-	if opts.PublicKey == nil {
-		return fmt.Errorf("PublicKey is nil")
+	if opts.PublicKeyHandler == nil {
+		return fmt.Errorf("PublicKeyHandler is nil")
 	}
 
-	if opts.Issuer == "" {
-		return fmt.Errorf("Issuer is empty")
+	if opts.IssuerHandler == nil {
+		return fmt.Errorf("IssuerHandler is nil")
 	}
 
 	return nil
 }
 
 type handlers struct {
-	as        *asserver.Server
-	publicKey jwk.Key
-	issuer    string
+	as               *asserver.Server
+	publicKeyHandler models.PublicKeyGetter
+	issuerHandler    models.IssuerGetter
 }
 
 func newHandlers(opts HandlersOptions) (*handlers, error) {
@@ -48,9 +48,9 @@ func newHandlers(opts HandlersOptions) (*handlers, error) {
 	}
 
 	return &handlers{
-		as:        opts.AuthorizationServer,
-		publicKey: opts.PublicKey,
-		issuer:    opts.Issuer,
+		as:               opts.AuthorizationServer,
+		publicKeyHandler: opts.PublicKeyHandler,
+		issuerHandler:    opts.IssuerHandler,
 	}, nil
 }
 
@@ -138,17 +138,21 @@ func (h *handlers) test(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) jwk(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	pubKey := h.publicKeyHandler.GetPublicKey()
+
 	e := json.NewEncoder(w)
 	e.SetIndent("", "  ")
-	e.Encode(h.publicKey)
+	e.Encode(pubKey)
 }
 
 func (h *handlers) discovery(w http.ResponseWriter, r *http.Request) {
+	issuer := h.issuerHandler.GetIssuer()
+
 	discoveryData := map[string]interface{}{
-		"issuer":                                h.issuer,
-		"authorization_endpoint":                h.issuer + "/oauth/authorize",
-		"token_endpoint":                        h.issuer + "/oauth/token",
-		"jwks_uri":                              h.issuer + "/jwk",
+		"issuer":                                issuer,
+		"authorization_endpoint":                issuer + "/oauth/authorize",
+		"token_endpoint":                        issuer + "/oauth/token",
+		"jwks_uri":                              issuer + "/jwk",
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"ES384"},
@@ -175,8 +179,4 @@ func (h *handlers) serveHTML(w http.ResponseWriter, req *http.Request, filename 
 	handler := http.FileServer(http.FS(content))
 	req.URL.Path = filename
 	handler.ServeHTTP(w, req)
-}
-
-func (h *handlers) SetIssuer(newIssuer string) {
-	h.issuer = newIssuer
 }
