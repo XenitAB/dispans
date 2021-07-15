@@ -472,7 +472,7 @@ func testDiscoveryE2E(t *testing.T, helper testE2EHelper) {
 	require.NoError(t, err)
 
 	require.Equal(t, helper.remote, discoveryData.Issuer)
-	require.Equal(t, fmt.Sprintf("%s/jwk", helper.remote), discoveryData.JwksUri)
+	require.Equal(t, fmt.Sprintf("%s/jwks", helper.remote), discoveryData.JwksUri)
 }
 
 type testTokenResponse struct {

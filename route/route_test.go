@@ -176,7 +176,7 @@ func TestJwks(t *testing.T) {
 
 	tokenResponse := testGetToken(t, routeHandler, oauthInfo, code)
 
-	req := httptest.NewRequest("GET", "/jwk", nil)
+	req := httptest.NewRequest("GET", "/jwks", nil)
 
 	w := httptest.NewRecorder()
 	routeHandler.Jwks(w, req)
@@ -240,7 +240,7 @@ func TestDiscovery(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, routeHandler.issuerHandler.GetIssuer(), discoveryData.Issuer)
-	require.Contains(t, discoveryData.JwksUri, "/jwk")
+	require.Contains(t, discoveryData.JwksUri, "/jwks")
 }
 
 func testAddCookiesToRequest(t *testing.T, req *http.Request, cookies []*http.Cookie) {

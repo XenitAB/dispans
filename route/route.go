@@ -153,7 +153,7 @@ func (h *handler) Discovery(w http.ResponseWriter, r *http.Request) {
 		"issuer":                                issuer,
 		"authorization_endpoint":                issuer + "/oauth/authorize",
 		"token_endpoint":                        issuer + "/oauth/token",
-		"jwks_uri":                              issuer + "/jwk",
+		"jwks_uri":                              issuer + "/jwks",
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"ES384"},
