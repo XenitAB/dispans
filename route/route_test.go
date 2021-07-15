@@ -167,7 +167,7 @@ func TestTestEndpoint(t *testing.T) {
 	require.Equal(t, testClientID, data.ClientID)
 }
 
-func TestJwk(t *testing.T) {
+func TestJwks(t *testing.T) {
 	routeHandler := testNewRouteHandler(t)
 
 	oauthInfo := testGetOAuthInformation(t, "openid profile email")
@@ -179,7 +179,7 @@ func TestJwk(t *testing.T) {
 	req := httptest.NewRequest("GET", "/jwk", nil)
 
 	w := httptest.NewRecorder()
-	routeHandler.Jwk(w, req)
+	routeHandler.Jwks(w, req)
 	res := w.Result()
 
 	require.Equal(t, http.StatusOK, res.StatusCode)

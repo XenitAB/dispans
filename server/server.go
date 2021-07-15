@@ -173,7 +173,7 @@ func newRouter(as models.AuthorizationServer, issuerHandler models.IssuerGetter,
 	router.HandleFunc("/oauth/authorize", routeHandler.Authorize)
 	router.HandleFunc("/oauth/token", routeHandler.Token)
 	router.HandleFunc("/test", routeHandler.Test)
-	router.HandleFunc("/jwk", routeHandler.Jwk)
+	router.HandleFunc("/jwks", routeHandler.Jwks)
 	router.HandleFunc("/.well-known/openid-configuration", routeHandler.Discovery)
 
 	return router, nil
