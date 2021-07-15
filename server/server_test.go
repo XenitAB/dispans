@@ -20,6 +20,7 @@ import (
 	"github.com/xenitab/dispans/authority"
 	"github.com/xenitab/dispans/helper"
 	"github.com/xenitab/dispans/key"
+	"github.com/xenitab/dispans/models"
 	"github.com/xenitab/dispans/token"
 	"github.com/xenitab/dispans/user"
 	"github.com/xenitab/pkg/service"
@@ -93,6 +94,107 @@ func TestNew(t *testing.T) {
 }
 
 func TestAuthorizationServerE2E(t *testing.T) {
+	helper := testPrepareE2E(t)
+	defer helper.testServer.Close()
+
+	// Request #1 - GET /oauth/authorize without cookies
+	testGetAuthorizeE2E(t, helper)
+
+	// Request #2 - GET /login
+	testGetLoginE2E(t, helper)
+
+	// Request #3 - POST /login
+	testPostLoginE2E(t, helper)
+
+	// Request #4 - GET /oauth/authorize
+	code, _ := getAuthorizeWithCookiesE2E(t, helper)
+
+	// Request #5 - POST /oauth/token
+	tokenResponseBytes := testPostTokenE2E(t, helper, code)
+
+	// Request #6 - GET /jwk
+	keySet := testGetJwksE2E(t, helper)
+
+	// Validate token
+	testValidateTokenResponse(t, helper, tokenResponseBytes, keySet)
+
+	// Validate discovery
+	testDiscoveryE2E(t, helper)
+}
+
+func TestKeyRotationE2E(t *testing.T) {
+	helper := testPrepareE2E(t)
+	defer helper.testServer.Close()
+
+	// Get first token response
+	testGetAuthorizeE2E(t, helper)
+	testGetLoginE2E(t, helper)
+	testPostLoginE2E(t, helper)
+	firstCode, _ := getAuthorizeWithCookiesE2E(t, helper)
+	firstTokenResponseBytes := testPostTokenE2E(t, helper, firstCode)
+
+	// Get Jwks with only one key
+	firstKeySet := testGetJwksE2E(t, helper)
+	require.Equal(t, 1, firstKeySet.Len())
+	testValidateTokenResponse(t, helper, firstTokenResponseBytes, firstKeySet)
+
+	// Clear cookies and add key
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	helper.httpClient.Jar = jar
+	err = helper.keyHandler.AddNewKey()
+	require.NoError(t, err)
+
+	// Get second token response
+	testGetAuthorizeE2E(t, helper)
+	testGetLoginE2E(t, helper)
+	testPostLoginE2E(t, helper)
+	secondCode, _ := getAuthorizeWithCookiesE2E(t, helper)
+	secondTokenResponseBytes := testPostTokenE2E(t, helper, secondCode)
+
+	// Get Jwks with only one key
+	secondKeySet := testGetJwksE2E(t, helper)
+	require.Equal(t, 2, secondKeySet.Len())
+	testValidateTokenResponse(t, helper, secondTokenResponseBytes, secondKeySet)
+
+	// Validate that the token is signed with the second key
+	firstKey, ok := secondKeySet.Get(0)
+	require.True(t, ok)
+	invalidKeySet := jwk.NewSet()
+	invalidKeySet.Add(firstKey)
+	require.Equal(t, firstKeySet, invalidKeySet)
+	secondKey, ok := secondKeySet.Get(1)
+	require.True(t, ok)
+	validKeySet := jwk.NewSet()
+	validKeySet.Add(secondKey)
+
+	testValidateTokenResponseFailure(t, helper, secondTokenResponseBytes, invalidKeySet)
+	testValidateTokenResponse(t, helper, secondTokenResponseBytes, validKeySet)
+
+	// Remove the oldest key and validate that Jwks only contains the new one
+	err = helper.keyHandler.RemoveOldestKey()
+	require.NoError(t, err)
+	thirdKeySet := testGetJwksE2E(t, helper)
+	require.Equal(t, 1, thirdKeySet.Len())
+	testValidateTokenResponse(t, helper, secondTokenResponseBytes, thirdKeySet)
+}
+
+type testE2EHelper struct {
+	testServer    *httptest.Server
+	httpClient    *http.Client
+	keyHandler    models.KeysUpdater
+	remote        string
+	clientID      string
+	clientSecret  string
+	redirectURI   string
+	codeVerifier  string
+	codeChallange string
+	state         string
+}
+
+func testPrepareE2E(t *testing.T) testE2EHelper {
+	t.Helper()
+
 	keyHandler, err := key.NewHandler()
 	require.NoError(t, err)
 
@@ -162,87 +264,74 @@ func TestAuthorizationServerE2E(t *testing.T) {
 	state, err := helper.GenerateState()
 	require.NoError(t, err)
 
-	// Request #1 - GET /oauth/authorize without cookies
-	testGetAuthorizeE2E(t, httpClient, testServer.URL, clientID, codeChallange, redirectURI, state)
-
-	// Request #2 - GET /login
-	testGetLoginE2E(t, httpClient, testServer.URL)
-
-	// Request #3 - POST /login
-	testPostLoginE2E(t, httpClient, testServer.URL)
-
-	// Request #4 - GET /oauth/authorize
-	code, _ := getAuthorizeWithCookiesE2E(t, httpClient, testServer.URL, redirectURI, state)
-
-	// Request #5 - POST /oauth/token
-	tokenResponseBytes := testPostTokenE2E(t, httpClient, testServer.URL, clientID, clientSecret, codeVerifier, code, redirectURI)
-
-	// Request #6 - GET /jwk
-	keySet := testGetJwkE2E(t, httpClient, testServer.URL)
-
-	// Validate token
-	testValidateTokenResponse(t, tokenResponseBytes, keySet, clientID, testServer.URL)
-
-	// Validate discovery
-	testDiscoveryE2E(t, httpClient, testServer.URL)
-
-	testServer.Close()
+	return testE2EHelper{
+		testServer:    testServer,
+		httpClient:    httpClient,
+		keyHandler:    keyHandler,
+		remote:        testServer.URL,
+		clientID:      clientID,
+		clientSecret:  clientSecret,
+		redirectURI:   redirectURI,
+		codeVerifier:  codeVerifier,
+		codeChallange: codeChallange,
+		state:         state,
+	}
 }
 
-func testGetAuthorizeE2E(t *testing.T, httpClient *http.Client, remote, clientID, codeChallange, redirectURI, state string) {
+func testGetAuthorizeE2E(t *testing.T, helper testE2EHelper) {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(remote)
+	remoteUrl, err := url.Parse(helper.remote)
 	require.NoError(t, err)
 
 	remoteUrl.Path = "/oauth/authorize"
 
 	query := url.Values{}
-	query.Add("client_id", clientID)
-	query.Add("code_challenge", codeChallange)
+	query.Add("client_id", helper.clientID)
+	query.Add("code_challenge", helper.codeChallange)
 	query.Add("code_challenge_method", "S256")
-	query.Add("redirect_uri", redirectURI)
+	query.Add("redirect_uri", helper.redirectURI)
 	query.Add("response_type", "code")
 	query.Add("scope", "all")
-	query.Add("state", state)
+	query.Add("state", helper.state)
 
 	remoteUrl.RawQuery = query.Encode()
 
 	req, err := http.NewRequest("GET", remoteUrl.String(), nil)
 	require.NoError(t, err)
 
-	require.Empty(t, httpClient.Jar.Cookies(remoteUrl))
+	require.Empty(t, helper.httpClient.Jar.Cookies(remoteUrl))
 
-	res, err := httpClient.Do(req)
+	res, err := helper.httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
 
 	resLocation := res.Header.Get("location")
 	require.Contains(t, resLocation, "/login")
-	require.NotEmpty(t, httpClient.Jar.Cookies(remoteUrl))
+	require.NotEmpty(t, helper.httpClient.Jar.Cookies(remoteUrl))
 }
 
-func testGetLoginE2E(t *testing.T, httpClient *http.Client, remote string) {
+func testGetLoginE2E(t *testing.T, helper testE2EHelper) {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(remote)
+	remoteUrl, err := url.Parse(helper.remote)
 	require.NoError(t, err)
 	remoteUrl.Path = "/login"
 
 	req, err := http.NewRequest("GET", remoteUrl.String(), nil)
 	require.NoError(t, err)
 
-	res, err := httpClient.Do(req)
+	res, err := helper.httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
 }
 
-func testPostLoginE2E(t *testing.T, httpClient *http.Client, remote string) {
+func testPostLoginE2E(t *testing.T, helper testE2EHelper) {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(remote)
+	remoteUrl, err := url.Parse(helper.remote)
 	require.NoError(t, err)
 	remoteUrl.Path = "/login"
 
@@ -257,7 +346,7 @@ func testPostLoginE2E(t *testing.T, httpClient *http.Client, remote string) {
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	res, err := httpClient.Do(req)
+	res, err := helper.httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
@@ -265,22 +354,22 @@ func testPostLoginE2E(t *testing.T, httpClient *http.Client, remote string) {
 	require.Contains(t, resLocation, "/oauth/authorize")
 }
 
-func getAuthorizeWithCookiesE2E(t *testing.T, httpClient *http.Client, remote, redirectURI, state string) (string, string) {
+func getAuthorizeWithCookiesE2E(t *testing.T, helper testE2EHelper) (string, string) {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(remote)
+	remoteUrl, err := url.Parse(helper.remote)
 	require.NoError(t, err)
 	remoteUrl.Path = "/oauth/authorize"
 
 	req, err := http.NewRequest("GET", remoteUrl.String(), nil)
 	require.NoError(t, err)
 
-	res, err := httpClient.Do(req)
+	res, err := helper.httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
 	resLocation := res.Header.Get("location")
-	require.Contains(t, resLocation, redirectURI)
+	require.Contains(t, resLocation, helper.redirectURI)
 
 	resLocationUrl, err := url.Parse(res.Header.Get("location"))
 	require.NoError(t, err)
@@ -288,24 +377,24 @@ func getAuthorizeWithCookiesE2E(t *testing.T, httpClient *http.Client, remote, r
 	code := resLocationUrl.Query().Get("code")
 	resState := resLocationUrl.Query().Get("state")
 	require.NotEmpty(t, code)
-	require.Equal(t, state, resState)
+	require.Equal(t, helper.state, resState)
 
 	return code, resState
 }
 
-func testPostTokenE2E(t *testing.T, httpClient *http.Client, remote, clientID, clientSecret, codeVerifier, code, redirectURI string) []byte {
+func testPostTokenE2E(t *testing.T, helper testE2EHelper, code string) []byte {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(remote)
+	remoteUrl, err := url.Parse(helper.remote)
 	require.NoError(t, err)
 	remoteUrl.Path = "/oauth/token"
 
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
-	data.Set("client_id", clientID)
-	data.Set("code_verifier", codeVerifier)
+	data.Set("client_id", helper.clientID)
+	data.Set("code_verifier", helper.codeVerifier)
 	data.Set("code", code)
-	data.Set("redirect_uri", redirectURI)
+	data.Set("redirect_uri", helper.redirectURI)
 
 	body := strings.NewReader(data.Encode())
 
@@ -313,9 +402,9 @@ func testPostTokenE2E(t *testing.T, httpClient *http.Client, remote, clientID, c
 	require.NoError(t, err)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth(url.QueryEscape(clientID), url.QueryEscape(clientSecret))
+	req.SetBasicAuth(url.QueryEscape(helper.clientID), url.QueryEscape(helper.clientSecret))
 
-	res, err := httpClient.Do(req)
+	res, err := helper.httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -329,17 +418,17 @@ func testPostTokenE2E(t *testing.T, httpClient *http.Client, remote, clientID, c
 	return bodyBytes
 }
 
-func testGetJwkE2E(t *testing.T, httpClient *http.Client, remote string) jwk.Set {
+func testGetJwksE2E(t *testing.T, helper testE2EHelper) jwk.Set {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(remote)
+	remoteUrl, err := url.Parse(helper.remote)
 	require.NoError(t, err)
-	remoteUrl.Path = "/jwk"
+	remoteUrl.Path = "/jwks"
 
 	req, err := http.NewRequest("GET", remoteUrl.String(), nil)
 	require.NoError(t, err)
 
-	res, err := httpClient.Do(req)
+	res, err := helper.httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -356,17 +445,17 @@ func testGetJwkE2E(t *testing.T, httpClient *http.Client, remote string) jwk.Set
 	return keySet
 }
 
-func testDiscoveryE2E(t *testing.T, httpClient *http.Client, remote string) {
+func testDiscoveryE2E(t *testing.T, helper testE2EHelper) {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(remote)
+	remoteUrl, err := url.Parse(helper.remote)
 	require.NoError(t, err)
 	remoteUrl.Path = "/.well-known/openid-configuration"
 
 	req, err := http.NewRequest("GET", remoteUrl.String(), nil)
 	require.NoError(t, err)
 
-	res, err := httpClient.Do(req)
+	res, err := helper.httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -382,8 +471,8 @@ func testDiscoveryE2E(t *testing.T, httpClient *http.Client, remote string) {
 	err = json.Unmarshal(bodyBytes, &discoveryData)
 	require.NoError(t, err)
 
-	require.Equal(t, remote, discoveryData.Issuer)
-	require.Equal(t, fmt.Sprintf("%s/jwk", remote), discoveryData.JwksUri)
+	require.Equal(t, helper.remote, discoveryData.Issuer)
+	require.Equal(t, fmt.Sprintf("%s/jwk", helper.remote), discoveryData.JwksUri)
 }
 
 type testTokenResponse struct {
@@ -395,7 +484,7 @@ type testTokenResponse struct {
 	IDToken      string `json:"id_token"`
 }
 
-func testValidateTokenResponse(t *testing.T, tokenResponseBytes []byte, keySet jwk.Set, clientID string, remote string) {
+func testValidateTokenResponse(t *testing.T, helper testE2EHelper, tokenResponseBytes []byte, keySet jwk.Set) {
 	var tokenResponse testTokenResponse
 	err := json.Unmarshal(tokenResponseBytes, &tokenResponse)
 	require.NoError(t, err)
@@ -403,9 +492,18 @@ func testValidateTokenResponse(t *testing.T, tokenResponseBytes []byte, keySet j
 	token, err := jwt.Parse([]byte(tokenResponse.AccessToken), jwt.WithKeySet(keySet))
 	require.NoError(t, err)
 
-	require.Equal(t, remote, token.Issuer())
-	require.Equal(t, clientID, token.Audience()[0])
+	require.Equal(t, helper.remote, token.Issuer())
+	require.Equal(t, helper.clientID, token.Audience()[0])
 	require.Equal(t, "test", token.Subject())
 	require.WithinDuration(t, time.Now(), token.NotBefore(), 1*time.Second)
 	require.WithinDuration(t, time.Now().Add(2*time.Hour), token.Expiration(), 1*time.Second)
+}
+
+func testValidateTokenResponseFailure(t *testing.T, helper testE2EHelper, tokenResponseBytes []byte, keySet jwk.Set) {
+	var tokenResponse testTokenResponse
+	err := json.Unmarshal(tokenResponseBytes, &tokenResponse)
+	require.NoError(t, err)
+
+	_, err = jwt.Parse([]byte(tokenResponse.AccessToken), jwt.WithKeySet(keySet))
+	require.Error(t, err)
 }

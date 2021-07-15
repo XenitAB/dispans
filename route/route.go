@@ -136,10 +136,10 @@ func (h *handler) Test(w http.ResponseWriter, r *http.Request) {
 	e.Encode(data)
 }
 
-func (h *handler) Jwk(w http.ResponseWriter, r *http.Request) {
+func (h *handler) Jwks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	pubKey := h.publicKeyHandler.GetPublicKey()
+	pubKey := h.publicKeyHandler.GetPublicKeySet()
 
 	e := json.NewEncoder(w)
 	e.SetIndent("", "  ")
