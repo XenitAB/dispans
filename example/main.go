@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/lestrrat-go/jwx/jwk"
+	"github.com/xenitab/pkg/service"
 )
 
 func main() {
@@ -35,9 +37,44 @@ func main() {
 }
 
 func run(cfg config) error {
-	jwksHandler, err := newKeyHandler(cfg.OidcIssuer)
+	errGroup, ctx, cancel := service.NewErrGroupAndContext()
+	defer cancel()
+
+	stopChan := service.NewStopChannel()
+	defer signal.Stop(stopChan)
+
+	addr := net.JoinHostPort(cfg.Address, fmt.Sprintf("%d", cfg.Port))
+	issuer := cfg.OidcIssuer
+
+	web, err := newWebHandler(issuer, addr)
 	if err != nil {
 		return err
+	}
+
+	service.Start(ctx, errGroup, web)
+
+	stoppedBy := service.WaitForStop(stopChan, ctx)
+	fmt.Printf("Application stopping. Stopped by: %s\n", stoppedBy)
+
+	cancel()
+
+	timeoutCtx, timeoutCancel := service.NewShutdownTimeoutContext()
+	defer timeoutCancel()
+
+	service.Stop(timeoutCtx, errGroup, web)
+
+	return service.WaitForErrGroup(errGroup)
+}
+
+type webHandler struct {
+	httpServer *echo.Echo
+	address    string
+}
+
+func newWebHandler(issuer string, addr string) (*webHandler, error) {
+	jwksHandler, err := newKeyHandler(issuer)
+	if err != nil {
+		return nil, err
 	}
 
 	e := echo.New()
@@ -55,9 +92,35 @@ func run(cfg config) error {
 	}))
 	r.GET("", restricted)
 
-	addr := net.JoinHostPort(cfg.Address, fmt.Sprintf("%d", cfg.Port))
+	return &webHandler{
+		httpServer: e,
+		address:    addr,
+	}, nil
+}
 
-	return e.Start(addr)
+func (h *webHandler) Start(ctx context.Context, wg *sync.WaitGroup) error {
+	wg.Done()
+
+	fmt.Printf("web server starting: %s\n", h.address)
+
+	err := h.httpServer.Start(h.address)
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+
+	return nil
+}
+
+func (h *webHandler) Stop(ctx context.Context) error {
+	err := h.httpServer.Shutdown(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "web server failed to stop gracefully: %v\n", err)
+		return err
+	}
+
+	fmt.Println("web server stopped gracefully")
+
+	return nil
 }
 
 type keyHandler struct {

@@ -10,15 +10,15 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/xenitab/dispans/helper"
+	"golang.org/x/oauth2"
 )
 
 type handlerTesting struct {
-	t              *testing.T
 	httpTestServer *httptest.Server
-	httpClient     *http.Client
 	clientID       string
 	clientSecret   string
 	redirectURI    string
@@ -57,53 +57,45 @@ func NewTesting(t *testing.T) *handlerTesting {
 
 	testServer.Config.Handler = router
 
-	httpClient := testServer.Client()
-	jar, err := cookiejar.New(nil)
-	require.NoError(t, err)
-	httpClient.Jar = jar
-
 	return &handlerTesting{
-		t:              t,
 		httpTestServer: testServer,
-		httpClient:     httpClient,
 		clientID:       clientID,
 		clientSecret:   clientSecret,
 		redirectURI:    redirectURI,
 	}
 }
 
-func (h *handlerTesting) Close() {
-	h.t.Helper()
+func (h *handlerTesting) Close(t *testing.T) {
+	t.Helper()
 
 	h.httpTestServer.Close()
 }
 
-func (h *handlerTesting) GetURL() string {
-	h.t.Helper()
+func (h *handlerTesting) GetURL(t *testing.T) string {
+	t.Helper()
 
 	return h.httpTestServer.URL
 }
 
-func (h *handlerTesting) GetClientID() string {
-	h.t.Helper()
+func (h *handlerTesting) GetClientID(t *testing.T) string {
+	t.Helper()
 
 	return h.clientID
 }
 
-func (h *handlerTesting) GetClientSecret() string {
-	h.t.Helper()
+func (h *handlerTesting) GetClientSecret(t *testing.T) string {
+	t.Helper()
 
 	return h.clientSecret
 }
 
-func (h *handlerTesting) GetRedirectURI() string {
-	h.t.Helper()
+func (h *handlerTesting) GetRedirectURI(t *testing.T) string {
+	t.Helper()
 
 	return h.redirectURI
 }
 
-func (h *handlerTesting) GetToken() (string, string, string) {
-	t := h.t
+func (h *handlerTesting) GetToken(t *testing.T) *oauth2.Token {
 	t.Helper()
 
 	codeVerifier, codeChallange, err := helper.GenerateCodeChallengeS256()
@@ -112,28 +104,49 @@ func (h *handlerTesting) GetToken() (string, string, string) {
 	state, err := helper.GenerateState()
 	require.NoError(t, err)
 
-	h.getAuhtorize(codeChallange, state)
-	h.getLogin()
-	h.postLogin()
-	code := h.getAuthorizeWithCookies(state)
-	tokenResponseBytes := h.postToken(code, codeVerifier)
+	httpClient := h.httpTestServer.Client()
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	httpClient.Jar = jar
+	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	h.getAuhtorize(t, httpClient, codeChallange, state)
+	h.getLogin(t, httpClient)
+	h.postLogin(t, httpClient)
+	code := h.getAuthorizeWithCookies(t, httpClient, state)
+	tokenResponseBytes := h.postToken(t, httpClient, code, codeVerifier)
 
 	var tokenResponse struct {
 		AccessToken  string `json:"access_token"`
-		IDToken      string `json:"id_token"`
+		ExpiresIn    int64  `json:"expires_in"`
 		RefreshToken string `json:"refresh_token"`
+		Scope        string `json:"scope"`
+		TokenType    string `json:"token_type"`
+		IDToken      string `json:"id_token"`
 	}
 
 	err = json.Unmarshal(tokenResponseBytes, &tokenResponse)
 
-	return tokenResponse.AccessToken, tokenResponse.IDToken, tokenResponse.RefreshToken
+	token := oauth2.Token{
+		TokenType:    tokenResponse.TokenType,
+		AccessToken:  tokenResponse.AccessToken,
+		RefreshToken: tokenResponse.RefreshToken,
+		Expiry:       time.Now().Add(time.Second * time.Duration(tokenResponse.ExpiresIn)),
+	}
+
+	tokenExtras := map[string]string{}
+	tokenExtras["id_token"] = tokenResponse.IDToken
+	tokenExtras["scope"] = tokenResponse.Scope
+
+	return token.WithExtra(tokenExtras)
 }
 
-func (h *handlerTesting) getAuhtorize(codeChallange, state string) {
-	t := h.t
+func (h *handlerTesting) getAuhtorize(t *testing.T, httpClient *http.Client, codeChallange, state string) {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(h.GetURL())
+	remoteUrl, err := url.Parse(h.GetURL(t))
 	require.NoError(t, err)
 
 	remoteUrl.Path = "/oauth/authorize"
@@ -152,34 +165,32 @@ func (h *handlerTesting) getAuhtorize(codeChallange, state string) {
 	req, err := http.NewRequest("GET", remoteUrl.String(), nil)
 	require.NoError(t, err)
 
-	res, err := h.httpClient.Do(req)
+	res, err := httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
 }
 
-func (h *handlerTesting) getLogin() {
-	t := h.t
+func (h *handlerTesting) getLogin(t *testing.T, httpClient *http.Client) {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(h.GetURL())
+	remoteUrl, err := url.Parse(h.GetURL(t))
 	require.NoError(t, err)
 	remoteUrl.Path = "/login"
 
 	req, err := http.NewRequest("GET", remoteUrl.String(), nil)
 	require.NoError(t, err)
 
-	res, err := h.httpClient.Do(req)
+	res, err := httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
 }
 
-func (h *handlerTesting) postLogin() {
-	t := h.t
+func (h *handlerTesting) postLogin(t *testing.T, httpClient *http.Client) {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(h.GetURL())
+	remoteUrl, err := url.Parse(h.GetURL(t))
 	require.NoError(t, err)
 	remoteUrl.Path = "/login"
 
@@ -194,24 +205,23 @@ func (h *handlerTesting) postLogin() {
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	res, err := h.httpClient.Do(req)
+	res, err := httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
 }
 
-func (h *handlerTesting) getAuthorizeWithCookies(state string) string {
-	t := h.t
+func (h *handlerTesting) getAuthorizeWithCookies(t *testing.T, httpClient *http.Client, state string) string {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(h.GetURL())
+	remoteUrl, err := url.Parse(h.GetURL(t))
 	require.NoError(t, err)
 	remoteUrl.Path = "/oauth/authorize"
 
 	req, err := http.NewRequest("GET", remoteUrl.String(), nil)
 	require.NoError(t, err)
 
-	res, err := h.httpClient.Do(req)
+	res, err := httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusFound, res.StatusCode)
@@ -229,11 +239,10 @@ func (h *handlerTesting) getAuthorizeWithCookies(state string) string {
 	return code
 }
 
-func (h *handlerTesting) postToken(code, codeVerifier string) []byte {
-	t := h.t
+func (h *handlerTesting) postToken(t *testing.T, httpClient *http.Client, code, codeVerifier string) []byte {
 	t.Helper()
 
-	remoteUrl, err := url.Parse(h.GetURL())
+	remoteUrl, err := url.Parse(h.GetURL(t))
 	require.NoError(t, err)
 	remoteUrl.Path = "/oauth/token"
 
@@ -252,7 +261,7 @@ func (h *handlerTesting) postToken(code, codeVerifier string) []byte {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth(url.QueryEscape(h.clientID), url.QueryEscape(h.clientSecret))
 
-	res, err := h.httpClient.Do(req)
+	res, err := httpClient.Do(req)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
