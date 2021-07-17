@@ -66,6 +66,23 @@ func New(opts Options) (*handler, error) {
 		return nil, err
 	}
 
+	router, err := new(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	addr := net.JoinHostPort(opts.Address, fmt.Sprintf("%d", opts.Port))
+	httpServer := &http.Server{
+		Addr:    addr,
+		Handler: router,
+	}
+
+	return &handler{
+		httpServer: httpServer,
+	}, nil
+}
+
+func new(opts Options) (http.Handler, error) {
 	authorityOpts := authority.Options{
 		Issuer: opts.Issuer,
 	}
@@ -113,20 +130,7 @@ func New(opts Options) (*handler, error) {
 		return nil, err
 	}
 
-	router, err := newRouter(as, authorityHandler, keyHandler)
-	if err != nil {
-		return nil, err
-	}
-
-	addr := net.JoinHostPort(opts.Address, fmt.Sprintf("%d", opts.Port))
-	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: router,
-	}
-
-	return &handler{
-		httpServer: httpServer,
-	}, nil
+	return newRouter(as, authorityHandler, keyHandler)
 }
 
 func (h *handler) Start(ctx context.Context, wg *sync.WaitGroup) error {
