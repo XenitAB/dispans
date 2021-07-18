@@ -12,8 +12,6 @@ require (
 	github.com/lestrrat-go/jwx v1.2.4
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
 	github.com/stretchr/testify v1.7.0
-	github.com/xenitab/pkg v0.0.1
+	github.com/xenitab/pkg v0.0.2
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 )
-
-replace github.com/xenitab/pkg => /home/simon/dev/xenit/github/pkg
