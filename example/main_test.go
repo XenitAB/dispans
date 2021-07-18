@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
 	"github.com/xenitab/dispans/server"
+	"github.com/xenitab/pkg/echo-v4-middleware/oidc"
 	"github.com/xenitab/pkg/service"
+	"golang.org/x/oauth2"
 )
 
 func TestAccessible(t *testing.T) {
@@ -33,12 +34,11 @@ func TestRestricted(t *testing.T) {
 	op := server.NewTesting(t)
 	defer op.Close(t)
 
-	jwksHandler, err := newKeyHandler(op.GetURL(t))
-	require.NoError(t, err)
-
 	e := echo.New()
-	restrictedHandler := middleware.JWTWithConfig(middleware.JWTConfig{
-		KeyFunc: jwksHandler.jwtKeyFunc,
+	restrictedHandler := oidc.OIDCWithConfig(oidc.OIDCConfig{
+		Authority:         op.GetURL(t),
+		RequiredTokenType: "JWT+AT",
+		RequiredAudience:  "test-client",
 	})(restricted)
 
 	// Test without authentication
@@ -46,23 +46,54 @@ func TestRestricted(t *testing.T) {
 	recNoAuth := httptest.NewRecorder()
 	cNoAuth := e.NewContext(reqNoAuth, recNoAuth)
 
-	err = restrictedHandler(cNoAuth)
+	err := restrictedHandler(cNoAuth)
 	require.Error(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	// Test with authentication
 	token := op.GetToken(t)
+	testRestrictedWithAuthentication(t, token, restrictedHandler, e)
+	testRestrictedFailIDToken(t, token, restrictedHandler, e)
+
+	// Test with rotated key
+	op.RotateKeys(t)
+	tokenWithRotatedKey := op.GetToken(t)
+	testRestrictedWithAuthentication(t, tokenWithRotatedKey, restrictedHandler, e)
+
+}
+
+func testRestrictedWithAuthentication(t *testing.T, token *oauth2.Token, restrictedHandler echo.HandlerFunc, e *echo.Echo) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	token.Valid()
+	token.SetAuthHeader(req)
+
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := restrictedHandler(c)
+	require.NoError(t, err)
+
+	res := rec.Result()
+
+	require.Equal(t, http.StatusOK, res.StatusCode)
+}
+
+func testRestrictedFailIDToken(t *testing.T, token *oauth2.Token, restrictedHandler echo.HandlerFunc, e *echo.Echo) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	idToken, ok := token.Extra("id_token").(string)
+	require.True(t, ok)
+
+	token.AccessToken = idToken
 
 	token.SetAuthHeader(req)
 
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	err = restrictedHandler(c)
-	require.NoError(t, err)
-
-	res := rec.Result()
-
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	err := restrictedHandler(c)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "type \"JWT+AT\" required, but received: JWT")
 }
 
 func TestE2E(t *testing.T) {

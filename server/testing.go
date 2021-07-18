@@ -14,11 +14,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/xenitab/dispans/helper"
+	"github.com/xenitab/dispans/key"
+	"github.com/xenitab/dispans/models"
 	"golang.org/x/oauth2"
 )
 
 type handlerTesting struct {
 	httpTestServer *httptest.Server
+	keyHandler     models.KeysUpdater
 	clientID       string
 	clientSecret   string
 	redirectURI    string
@@ -40,6 +43,9 @@ func NewTesting(t *testing.T) *handlerTesting {
 	clientSecret := "test-secret"
 	redirectURI := "http://test.foo.bar/callback"
 
+	keyHandler, err := key.NewHandler()
+	require.NoError(t, err)
+
 	opts := Options{
 		Address:      addr,
 		Port:         port,
@@ -47,6 +53,7 @@ func NewTesting(t *testing.T) *handlerTesting {
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		RedirectURI:  redirectURI,
+		keyHandler:   keyHandler,
 	}
 
 	err = opts.Validate()
@@ -59,6 +66,7 @@ func NewTesting(t *testing.T) *handlerTesting {
 
 	return &handlerTesting{
 		httpTestServer: testServer,
+		keyHandler:     keyHandler,
 		clientID:       clientID,
 		clientSecret:   clientSecret,
 		redirectURI:    redirectURI,
@@ -93,6 +101,17 @@ func (h *handlerTesting) GetRedirectURI(t *testing.T) string {
 	t.Helper()
 
 	return h.redirectURI
+}
+
+func (h *handlerTesting) RotateKeys(t *testing.T) {
+	t.Helper()
+
+	err := h.keyHandler.AddNewKey()
+	require.NoError(t, err)
+
+	err = h.keyHandler.RemoveOldestKey()
+	require.NoError(t, err)
+
 }
 
 func (h *handlerTesting) GetToken(t *testing.T) *oauth2.Token {
@@ -136,7 +155,7 @@ func (h *handlerTesting) GetToken(t *testing.T) *oauth2.Token {
 		Expiry:       time.Now().Add(time.Second * time.Duration(tokenResponse.ExpiresIn)),
 	}
 
-	tokenExtras := map[string]string{}
+	tokenExtras := map[string]interface{}{}
 	tokenExtras["id_token"] = tokenResponse.IDToken
 	tokenExtras["scope"] = tokenResponse.Scope
 
@@ -157,7 +176,7 @@ func (h *handlerTesting) getAuhtorize(t *testing.T, httpClient *http.Client, cod
 	query.Add("code_challenge_method", "S256")
 	query.Add("redirect_uri", h.redirectURI)
 	query.Add("response_type", "code")
-	query.Add("scope", "all")
+	query.Add("scope", "openid")
 	query.Add("state", state)
 
 	remoteUrl.RawQuery = query.Encode()
