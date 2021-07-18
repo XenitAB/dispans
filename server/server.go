@@ -26,6 +26,7 @@ type Options struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURI  string
+	keyHandler   models.KeysUpdater
 }
 
 func (opts Options) Validate() error {
@@ -92,9 +93,12 @@ func new(opts Options) (http.Handler, error) {
 		return nil, err
 	}
 
-	keyHandler, err := key.NewHandler()
-	if err != nil {
-		return nil, err
+	keyHandler := opts.keyHandler
+	if keyHandler == nil {
+		keyHandler, err = key.NewHandler()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	userHandler := user.NewHandler()

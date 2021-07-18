@@ -32,4 +32,5 @@ type KeysRemover interface {
 type KeysUpdater interface {
 	KeysAdder
 	KeysRemover
+	KeysGetter
 }
