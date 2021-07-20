@@ -495,7 +495,7 @@ func testValidateTokenResponse(t *testing.T, helper testE2EHelper, tokenResponse
 	require.Equal(t, helper.remote, token.Issuer())
 	require.Equal(t, helper.clientID, token.Audience()[0])
 	require.Equal(t, "test", token.Subject())
-	require.WithinDuration(t, time.Now(), token.NotBefore(), 1*time.Second)
+	require.WithinDuration(t, time.Now(), token.NotBefore(), 2*time.Second)
 	require.WithinDuration(t, time.Now().Add(2*time.Hour), token.Expiration(), 1*time.Second)
 }
 

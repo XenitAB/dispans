@@ -79,7 +79,7 @@ func newWebHandler(issuer string, addr string) (*webHandler, error) {
 	// Restricted group
 	r := e.Group("/restricted")
 	r.Use(oidc.OIDCWithConfig(oidc.OIDCConfig{
-		Authority: issuer,
+		Issuer: issuer,
 	}))
 	r.GET("", restricted)
 

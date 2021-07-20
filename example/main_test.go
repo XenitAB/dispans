@@ -36,7 +36,7 @@ func TestRestricted(t *testing.T) {
 
 	e := echo.New()
 	restrictedHandler := oidc.OIDCWithConfig(oidc.OIDCConfig{
-		Authority:         op.GetURL(t),
+		Issuer:            op.GetURL(t),
 		RequiredTokenType: "JWT+AT",
 		RequiredAudience:  "test-client",
 	})(restricted)
