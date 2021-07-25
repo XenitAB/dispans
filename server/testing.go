@@ -27,7 +27,7 @@ type handlerTesting struct {
 	redirectURI    string
 }
 
-func NewTesting(t *testing.T) *handlerTesting {
+func NewTesting(t testing.TB) *handlerTesting {
 	t.Helper()
 
 	testServer := httptest.NewServer(nil)
@@ -73,37 +73,37 @@ func NewTesting(t *testing.T) *handlerTesting {
 	}
 }
 
-func (h *handlerTesting) Close(t *testing.T) {
+func (h *handlerTesting) Close(t testing.TB) {
 	t.Helper()
 
 	h.httpTestServer.Close()
 }
 
-func (h *handlerTesting) GetURL(t *testing.T) string {
+func (h *handlerTesting) GetURL(t testing.TB) string {
 	t.Helper()
 
 	return h.httpTestServer.URL
 }
 
-func (h *handlerTesting) GetClientID(t *testing.T) string {
+func (h *handlerTesting) GetClientID(t testing.TB) string {
 	t.Helper()
 
 	return h.clientID
 }
 
-func (h *handlerTesting) GetClientSecret(t *testing.T) string {
+func (h *handlerTesting) GetClientSecret(t testing.TB) string {
 	t.Helper()
 
 	return h.clientSecret
 }
 
-func (h *handlerTesting) GetRedirectURI(t *testing.T) string {
+func (h *handlerTesting) GetRedirectURI(t testing.TB) string {
 	t.Helper()
 
 	return h.redirectURI
 }
 
-func (h *handlerTesting) RotateKeys(t *testing.T) {
+func (h *handlerTesting) RotateKeys(t testing.TB) {
 	t.Helper()
 
 	err := h.keyHandler.AddNewKey()
@@ -114,7 +114,7 @@ func (h *handlerTesting) RotateKeys(t *testing.T) {
 
 }
 
-func (h *handlerTesting) GetToken(t *testing.T) *oauth2.Token {
+func (h *handlerTesting) GetToken(t testing.TB) *oauth2.Token {
 	t.Helper()
 
 	codeVerifier, codeChallange, err := helper.GenerateCodeChallengeS256()
@@ -162,7 +162,7 @@ func (h *handlerTesting) GetToken(t *testing.T) *oauth2.Token {
 	return token.WithExtra(tokenExtras)
 }
 
-func (h *handlerTesting) getAuhtorize(t *testing.T, httpClient *http.Client, codeChallange, state string) {
+func (h *handlerTesting) getAuhtorize(t testing.TB, httpClient *http.Client, codeChallange, state string) {
 	t.Helper()
 
 	remoteUrl, err := url.Parse(h.GetURL(t))
@@ -190,7 +190,7 @@ func (h *handlerTesting) getAuhtorize(t *testing.T, httpClient *http.Client, cod
 	require.Equal(t, http.StatusFound, res.StatusCode)
 }
 
-func (h *handlerTesting) getLogin(t *testing.T, httpClient *http.Client) {
+func (h *handlerTesting) getLogin(t testing.TB, httpClient *http.Client) {
 	t.Helper()
 
 	remoteUrl, err := url.Parse(h.GetURL(t))
@@ -206,7 +206,7 @@ func (h *handlerTesting) getLogin(t *testing.T, httpClient *http.Client) {
 	require.Equal(t, http.StatusOK, res.StatusCode)
 }
 
-func (h *handlerTesting) postLogin(t *testing.T, httpClient *http.Client) {
+func (h *handlerTesting) postLogin(t testing.TB, httpClient *http.Client) {
 	t.Helper()
 
 	remoteUrl, err := url.Parse(h.GetURL(t))
@@ -230,7 +230,7 @@ func (h *handlerTesting) postLogin(t *testing.T, httpClient *http.Client) {
 	require.Equal(t, http.StatusFound, res.StatusCode)
 }
 
-func (h *handlerTesting) getAuthorizeWithCookies(t *testing.T, httpClient *http.Client, state string) string {
+func (h *handlerTesting) getAuthorizeWithCookies(t testing.TB, httpClient *http.Client, state string) string {
 	t.Helper()
 
 	remoteUrl, err := url.Parse(h.GetURL(t))
@@ -258,7 +258,7 @@ func (h *handlerTesting) getAuthorizeWithCookies(t *testing.T, httpClient *http.
 	return code
 }
 
-func (h *handlerTesting) postToken(t *testing.T, httpClient *http.Client, code, codeVerifier string) []byte {
+func (h *handlerTesting) postToken(t testing.TB, httpClient *http.Client, code, codeVerifier string) []byte {
 	t.Helper()
 
 	remoteUrl, err := url.Parse(h.GetURL(t))
