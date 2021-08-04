@@ -14,7 +14,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/lestrrat-go/jwx/jwt"
-	"github.com/xenitab/pkg/echo-v4-middleware/oidc"
+	"github.com/xenitab/go-oidc-middleware/oidc"
 	"github.com/xenitab/pkg/service"
 )
 
@@ -78,8 +78,10 @@ func newWebHandler(issuer string, addr string) (*webHandler, error) {
 
 	// Restricted group
 	r := e.Group("/restricted")
-	r.Use(oidc.OIDCWithConfig(oidc.OIDCConfig{
-		Issuer: issuer,
+	r.Use(middleware.JWTWithConfig(middleware.JWTConfig{
+		ParseTokenFunc: oidc.NewEchoJWTParseTokenFunc(&oidc.Options{
+			Issuer: issuer,
+		}),
 	}))
 	r.GET("", restricted)
 

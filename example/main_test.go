@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
 	"github.com/xenitab/dispans/server"
-	"github.com/xenitab/pkg/echo-v4-middleware/oidc"
+	"github.com/xenitab/go-oidc-middleware/oidc"
 	"github.com/xenitab/pkg/service"
 	"golang.org/x/oauth2"
 )
@@ -35,10 +36,12 @@ func TestRestricted(t *testing.T) {
 	defer op.Close(t)
 
 	e := echo.New()
-	restrictedHandler := oidc.OIDCWithConfig(oidc.OIDCConfig{
-		Issuer:            op.GetURL(t),
-		RequiredTokenType: "JWT+AT",
-		RequiredAudience:  "test-client",
+	restrictedHandler := middleware.JWTWithConfig(middleware.JWTConfig{
+		ParseTokenFunc: oidc.NewEchoJWTParseTokenFunc(&oidc.Options{
+			Issuer:            op.GetURL(t),
+			RequiredTokenType: "JWT+AT",
+			RequiredAudience:  "test-client",
+		}),
 	})(restricted)
 
 	// Test without authentication
@@ -93,7 +96,7 @@ func testRestrictedFailIDToken(t *testing.T, token *oauth2.Token, restrictedHand
 
 	err := restrictedHandler(c)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "type \"JWT+AT\" required, but received: JWT")
+	require.Contains(t, err.Error(), "token type \"JWT+AT\" required")
 }
 
 func TestE2E(t *testing.T) {
