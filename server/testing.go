@@ -8,7 +8,7 @@ import (
 )
 
 type handlerTesting struct {
-	opHandler *opHandler
+	opHandler *OpHandler
 }
 
 func NewTesting(t testing.TB) *handlerTesting {
