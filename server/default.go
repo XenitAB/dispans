@@ -18,7 +18,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type opHandler struct {
+type OpHandler struct {
 	httpTestServer *httptest.Server
 	keyHandler     models.KeysUpdater
 	clientID       string
@@ -26,7 +26,7 @@ type opHandler struct {
 	redirectURI    string
 }
 
-func NewDefault() (*opHandler, error) {
+func NewDefault() (*OpHandler, error) {
 	testServer := httptest.NewServer(nil)
 
 	hostPort := testServer.Listener.Addr().String()
@@ -69,7 +69,7 @@ func NewDefault() (*opHandler, error) {
 
 	testServer.Config.Handler = router
 
-	return &opHandler{
+	return &OpHandler{
 		httpTestServer: testServer,
 		keyHandler:     keyHandler,
 		clientID:       clientID,
@@ -78,27 +78,27 @@ func NewDefault() (*opHandler, error) {
 	}, nil
 }
 
-func (h *opHandler) Close() {
+func (h *OpHandler) Close() {
 	h.httpTestServer.Close()
 }
 
-func (h *opHandler) GetURL() string {
+func (h *OpHandler) GetURL() string {
 	return h.httpTestServer.URL
 }
 
-func (h *opHandler) GetClientID() string {
+func (h *OpHandler) GetClientID() string {
 	return h.clientID
 }
 
-func (h *opHandler) GetClientSecret() string {
+func (h *OpHandler) GetClientSecret() string {
 	return h.clientSecret
 }
 
-func (h *opHandler) GetRedirectURI() string {
+func (h *OpHandler) GetRedirectURI() string {
 	return h.redirectURI
 }
 
-func (h *opHandler) RotateKeys() error {
+func (h *OpHandler) RotateKeys() error {
 	err := h.keyHandler.AddNewKey()
 	if err != nil {
 		return err
@@ -112,7 +112,7 @@ func (h *opHandler) RotateKeys() error {
 	return nil
 }
 
-func (h *opHandler) GetToken() (*oauth2.Token, error) {
+func (h *OpHandler) GetToken() (*oauth2.Token, error) {
 	codeVerifier, codeChallange, err := helper.GenerateCodeChallengeS256()
 	if err != nil {
 		return nil, err
@@ -174,7 +174,7 @@ func (h *opHandler) GetToken() (*oauth2.Token, error) {
 	return token.WithExtra(tokenExtras), nil
 }
 
-func (h *opHandler) getAuhtorize(httpClient *http.Client, codeChallange, state string) error {
+func (h *OpHandler) getAuhtorize(httpClient *http.Client, codeChallange, state string) error {
 	remoteUrl, err := url.Parse(h.GetURL())
 	if err != nil {
 		return err
@@ -210,7 +210,7 @@ func (h *opHandler) getAuhtorize(httpClient *http.Client, codeChallange, state s
 	return nil
 }
 
-func (h *opHandler) getLogin(httpClient *http.Client) error {
+func (h *OpHandler) getLogin(httpClient *http.Client) error {
 
 	remoteUrl, err := url.Parse(h.GetURL())
 	if err != nil {
@@ -236,7 +236,7 @@ func (h *opHandler) getLogin(httpClient *http.Client) error {
 	return nil
 }
 
-func (h *opHandler) postLogin(httpClient *http.Client) error {
+func (h *OpHandler) postLogin(httpClient *http.Client) error {
 	remoteUrl, err := url.Parse(h.GetURL())
 	if err != nil {
 		return err
@@ -269,7 +269,7 @@ func (h *opHandler) postLogin(httpClient *http.Client) error {
 	return nil
 }
 
-func (h *opHandler) getAuthorizeWithCookies(httpClient *http.Client, state string) (string, error) {
+func (h *OpHandler) getAuthorizeWithCookies(httpClient *http.Client, state string) (string, error) {
 	remoteUrl, err := url.Parse(h.GetURL())
 	if err != nil {
 		return "", err
@@ -315,7 +315,7 @@ func (h *opHandler) getAuthorizeWithCookies(httpClient *http.Client, state strin
 	return code, nil
 }
 
-func (h *opHandler) postToken(httpClient *http.Client, code, codeVerifier string) ([]byte, error) {
+func (h *OpHandler) postToken(httpClient *http.Client, code, codeVerifier string) ([]byte, error) {
 	remoteUrl, err := url.Parse(h.GetURL())
 	if err != nil {
 		return nil, err
