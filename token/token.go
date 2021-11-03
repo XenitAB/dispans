@@ -76,6 +76,7 @@ func (h *handler) getAccessToken(ctx context.Context, data *asoauth2.GenerateBas
 	token.Set(jwt.SubjectKey, data.UserID)
 	token.Set(jwt.ExpirationKey, data.TokenInfo.GetAccessCreateAt().Add(data.TokenInfo.GetAccessExpiresIn()).Unix())
 	token.Set(jwt.NotBeforeKey, data.TokenInfo.GetAccessCreateAt().Unix())
+	token.Set("sid", uuid.NewString())
 
 	key := h.privateKeyHandler.GetPrivateKey()
 
