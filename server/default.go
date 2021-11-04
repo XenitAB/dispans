@@ -26,7 +26,7 @@ type OpHandler struct {
 	redirectURI    string
 }
 
-func NewDefault() (*OpHandler, error) {
+func NewDefault(setters ...HandlerOption) (*OpHandler, error) {
 	testServer := httptest.NewServer(nil)
 
 	hostPort := testServer.Listener.Addr().String()
@@ -47,10 +47,18 @@ func NewDefault() (*OpHandler, error) {
 		return nil, err
 	}
 
+	handlerOpts := &HandlerOptions{
+		Issuer: testServer.URL,
+	}
+
+	for _, setter := range setters {
+		setter(handlerOpts)
+	}
+
 	opts := Options{
 		Address:      addr,
 		Port:         port,
-		Issuer:       testServer.URL,
+		Issuer:       handlerOpts.Issuer,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		RedirectURI:  redirectURI,
