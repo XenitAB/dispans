@@ -13,8 +13,8 @@ import (
 	"github.com/cristalhq/aconfig"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/lestrrat-go/jwx/jwt"
-	"github.com/xenitab/go-oidc-middleware/oidc"
+	"github.com/xenitab/go-oidc-middleware/oidcechojwt"
+	oidcoptions "github.com/xenitab/go-oidc-middleware/options"
 	"github.com/xenitab/pkg/service"
 )
 
@@ -79,9 +79,7 @@ func newWebHandler(issuer string, addr string) (*webHandler, error) {
 	// Restricted group
 	r := e.Group("/restricted")
 	r.Use(middleware.JWTWithConfig(middleware.JWTConfig{
-		ParseTokenFunc: oidc.NewEchoJWTParseTokenFunc(&oidc.Options{
-			Issuer: issuer,
-		}),
+		ParseTokenFunc: oidcechojwt.New(oidcoptions.WithIssuer(issuer)),
 	}))
 	r.GET("", restricted)
 
@@ -121,13 +119,8 @@ func accessible(c echo.Context) error {
 }
 
 func restricted(c echo.Context) error {
-	token, ok := c.Get("user").(jwt.Token)
+	claims, ok := c.Get("user").(map[string]interface{})
 	if !ok {
-		return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
-	}
-
-	claims, err := token.AsMap(c.Request().Context())
-	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
 	}
 

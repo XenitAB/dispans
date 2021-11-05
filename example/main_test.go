@@ -12,7 +12,8 @@ import (
 	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
 	"github.com/xenitab/dispans/server"
-	"github.com/xenitab/go-oidc-middleware/oidc"
+	"github.com/xenitab/go-oidc-middleware/oidcechojwt"
+	oidcoptions "github.com/xenitab/go-oidc-middleware/options"
 	"github.com/xenitab/pkg/service"
 	"golang.org/x/oauth2"
 )
@@ -37,11 +38,11 @@ func TestRestricted(t *testing.T) {
 
 	e := echo.New()
 	restrictedHandler := middleware.JWTWithConfig(middleware.JWTConfig{
-		ParseTokenFunc: oidc.NewEchoJWTParseTokenFunc(&oidc.Options{
-			Issuer:            op.GetURL(t),
-			RequiredTokenType: "JWT+AT",
-			RequiredAudience:  "test-client",
-		}),
+		ParseTokenFunc: oidcechojwt.New(
+			oidcoptions.WithIssuer(op.GetURL(t)),
+			oidcoptions.WithRequiredTokenType("JWT+AT"),
+			oidcoptions.WithRequiredAudience("test-client"),
+		),
 	})(restricted)
 
 	// Test without authentication
