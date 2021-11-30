@@ -1,3 +1,4 @@
+// Deprecated: use github.com/XenitAB/go-oidc-middleware/optest instead.
 module github.com/xenitab/dispans
 
 go 1.17
