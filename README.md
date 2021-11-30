@@ -1,3 +1,7 @@
+# DEPRECATED
+
+This module is deprecated. Please use `optest` in [github.com/XenitAB/go-oidc-middleware](https://github.com/XenitAB/go-oidc-middleware) instead.
+
 # dispans
 
 Go library providing in-memory implementation of an OAuth2 Authorization Server / OpenID Provider. The name comes from the Swedish word `dispens` (pronounced: `dis` like in `disconnect` and `pans` like in `pansar` - `dis-pans`) meaning `exemption` in English.
